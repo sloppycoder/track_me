@@ -1,11 +1,9 @@
 import logging
 import logging.config
-import yaml
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
+import yaml
 
 # Load the logging configuration
 LOGGING_CONFIG = {}
