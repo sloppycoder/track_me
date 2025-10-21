@@ -16,7 +16,11 @@ import random
 import sys
 from pathlib import Path
 
+import pillow_heif
 from PIL import Image
+
+# Register HEIF opener for HEIC support
+pillow_heif.register_heif_opener()
 
 # Supported image extensions
 IMAGE_EXTENSIONS = {".heic", ".jpg", ".jpeg", ".png"}
