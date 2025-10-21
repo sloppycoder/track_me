@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pyright .)",
+      "Bash(pyright myphoto/services/geocoding_service.py)",
+      "WebSearch",
+      "WebFetch(domain:pypi.org)",
+      "Bash(pip show googlemaps)",
+      "Bash(uv pip list)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

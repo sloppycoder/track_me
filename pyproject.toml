@@ -9,8 +9,13 @@ requires-python = ">= 3.12"
 dependencies = [
     "django>=5.2",
     "django-tailwind-cli>=4.4.2",
+    "googlemaps>=4.10.0",
     "gunicorn>=23.0.0",
+    "h3>=4.3.1",
+    "imagehash>=4.3.2",
+    "pillow>=12.0.0",
     "python-dotenv >= 1.1.1",
+    "pytz>=2025.2",
     "pyyaml>=6.0.2",
     "whitenoise>=6.11.0",
 ]
@@ -28,6 +33,7 @@ dev = [
     "pyright >= 1.1.405",
     "pytest-django>=4.11.1",
     "django-stubs>=5.2",
+    "playwright>=1.55.0",
 ]
 
 [tool.uv]
@@ -37,6 +43,7 @@ managed = true
 minversion = "6.0"
 testpaths = ["tests"]
 pythonpath = ["."]
+DJANGO_SETTINGS_MODULE = "track_me.settings"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
@@ -61,6 +68,7 @@ exclude = [
     "__pycache__",
     "venv",
     ".venv",
+    "*/migrations/*",
 ]
 
 [tool.ruff.lint]

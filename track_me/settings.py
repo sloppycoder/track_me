@@ -16,6 +16,7 @@ DEBUG = os.getenv("DEBUG", "0") == "1"
 # Application definition
 
 INSTALLED_APPS = [
+    # "django.contrib.admin",  # Disabled - not needed
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
