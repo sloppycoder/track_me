@@ -4,6 +4,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 devkey = "django-insecure-7@l%ik7thl2qo+8#zm%^6e(+72c!1310tujddhw2bgqk6f)r7m"
 SECRET_KEY = os.environ.get("SECRET_KEY", devkey)
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 ALLOWED_HOSTS = [".localhost", "127.0.0.1", ".run.app", ".vino9.net"]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",
