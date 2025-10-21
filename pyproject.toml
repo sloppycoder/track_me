@@ -1,0 +1,80 @@
+[project]
+name = "track_me"
+version = "0.1.0"
+description = "Cookiecutter template for generic Python 3 project with tooling configuration for testing, linting and IDE support"
+authors = [{ name = "Li Lin", email = "guru.lin@gmail.com" }]
+readme = "README.md"
+
+requires-python = ">= 3.12"
+dependencies = [
+    "python-dotenv >= 1.1.1",
+    "pyyaml>=6.0.2",
+]
+
+
+[dependency-groups]
+dev = [
+    "pytest >= 8.3.0",
+    "pytest-dotenv >= 0.5.2",
+    "pytest-mock >= 3.14",
+    "pytest-cov >= 6.1",
+    "pytest-asyncio>=0.25.3",
+    "pre-commit >= 4.0.1",
+    "ruff >= 0.12.10",
+    "pyright >= 1.1.405",
+]
+
+[tool.uv]
+managed = true
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+env_files = [".env"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+]
+
+# see ruff configuration options at
+# https://docs.astral.sh/ruff/configuration/
+
+[tool.ruff]
+line-length = 90
+indent-width = 4
+exclude = [
+    ".git",
+    "__pycache__",
+    "venv",
+    ".venv",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "W",
+    "C",
+    "I",
+    "A",
+] # Enable checks for PEP8, imports, and other standard rules
+ignore = ["E203", "E266"]
+
+[tool.pyright]
+include = [
+    "*.py",
+    "tests/*.py"
+]
+exclude = [
+    ".venv/",
+    "build/",
+]
+pythonVersion = "3.12"

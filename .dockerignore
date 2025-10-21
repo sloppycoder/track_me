@@ -1,0 +1,15 @@
+# Ignore everything
+
+**
+
+# White-list what we need
+
+!pyproject.toml
+!uv.lock
+!*.py
+!migrations/
+!me
+!flags*.json
+!logger_config.yaml
+!pyproject.toml
+!entrypoint.sh

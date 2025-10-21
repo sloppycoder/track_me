@@ -1,0 +1,150 @@
+# the branching model is trunk based development. the trunk is main in this case
+#
+# this workflow will be triggered when
+#
+#  1. a pull request is raised
+#  2. a push to 'main' branch takes place
+#  3. a release tag is created on the repo
+#
+#  whenever the event is trigger, build and test will be performed
+#  a container image will be created and pushed to ghcr.io only when the event
+#  trigger is push to main.
+#
+#  for push to main branch, main-YYYYMMDD-HHMISS-SHA7. the tagging should be
+#  sortable by chronological order so that it can be picked up by CD tools,
+#  e.g. FluxCD, for updating the deployment automatically
+#
+#  for new tag, the image tag will be same as the repository tag. e.g. 0.1.0
+#
+#
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "rel-*"
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Register REPO_PAT if used
+        run: |
+          if [ -n "$REPO_PAT" ]; then
+              echo $REPO_PAT | gh auth login --with-token
+              gh auth setup-git
+          fi
+        env:
+          REPO_PAT: ${{ secrets.PRIVATE_REPO_PAT }}
+
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.7.19"
+          enable-cache: true
+
+      - name: Install Python using uv 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Linting
+        run: |
+          uv run ruff check .
+
+      - name: Unit tests
+        id: unit_tests
+        run: |
+          uv run pytest -v -s --cov --cov-report=html
+
+          if [[ -f "htmlcov/index.html" ]]; then
+            echo "coverage_report=yes" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload test coverage report to GitHub pages
+        if: steps.unit_tests.outputs.coverage_report == 'yes'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: htmlcov
+        continue-on-error: true
+
+  buildx:
+    needs: pytest
+    # build images only when if pushed into main or a tag is pushed
+    if: startsWith(github.ref, 'refs/heads/main') || startsWith(github.ref, 'refs/tags/rel-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=main-{{date 'YYYYMMDD-HHmmss' tz='Asia/Singapore'}}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
+          flavor: |
+            latest=false
+          labels: |
+            org.opencontainers.image.source https://github.com/{{ github.repository }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          # use path context so that .dockerignore will be processed.
+          context: .
+          provenance: false
+          platforms: "linux/amd64,linux/arm64"
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            PAT=${{ secrets.PRIVATE_REPO_PAT || '' }}
+
+  clean-up:
+    needs: buildx
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete old images
+        uses: actions/delete-package-versions@v5
+        with:
+          owner: ${{ github.repository_owner }}
+          package-name: ${{ github.event.repository.name }}
+          package-type: container
+          min-versions-to-keep: 5
+          ignore-versions: latest
+          token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
