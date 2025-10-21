@@ -1,22 +1,23 @@
-from pathlib import Path
-from typing import Callable
+# ruff: noqa: F405 F403
+import logging
 
-import pytest
+from track_me.settings import *
 
-mock_data_path = Path(__file__).parent / "mockdata"
+# Test-specific overrides
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
+    }
+}
 
+# Test-specific settings
+DEBUG = False
+PASSWORD_HASHERS = [
+    "django.contrib.auth.hashers.MD5PasswordHasher",  # Fast hasher for tests
+]
 
-@pytest.fixture(scope="session")
-def mock_file_content() -> Callable:
-    def _mock_file_content(file_name):
-        with open(mock_data_path / file_name, "r") as f:
-            return f.read()
+# Disable logging during tests to reduce noise
+LOGGING_CONFIG = None
 
-    return _mock_file_content
-
-
-
-
-
-
-
+logging.disable(logging.CRITICAL)
