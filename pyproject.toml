@@ -14,6 +14,7 @@ dependencies = [
     "h3>=4.3.1",
     "imagehash>=4.3.2",
     "pillow>=12.0.0",
+    "pillow-heif>=1.1.1",
     "python-dotenv >= 1.1.1",
     "pytz>=2025.2",
     "pyyaml>=6.0.2",
@@ -80,7 +81,7 @@ select = [
     "I",
     "A",
 ] # Enable checks for PEP8, imports, and other standard rules
-ignore = ["E203", "E266"]
+ignore = ["E203", "E266", "C901"]
 
 [tool.pyright]
 include = [

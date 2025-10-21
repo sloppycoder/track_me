@@ -1,23 +1,16 @@
-# ruff: noqa: F405 F403
-import logging
+import pytest
 
-from track_me.settings import *
 
-# Test-specific overrides
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": ":memory:",
-    }
-}
+@pytest.fixture(scope="session")
+def django_db_setup(django_db_setup, django_db_blocker):
+    """Load initial data for all tests"""
+    with django_db_blocker.unblock():
+        pass
+        # call_command("loaddata", "tests/fixtures/batchjobs.json")
 
-# Test-specific settings
-DEBUG = False
-PASSWORD_HASHERS = [
-    "django.contrib.auth.hashers.MD5PasswordHasher",  # Fast hasher for tests
-]
 
-# Disable logging during tests to reduce noise
-LOGGING_CONFIG = None
-
-logging.disable(logging.CRITICAL)
+@pytest.fixture
+def loaded_data(django_db_setup):
+    """Fixture that ensures data is loaded"""
+    # Data is already loaded by django_db_setup
+    pass

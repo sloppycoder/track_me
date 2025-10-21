@@ -17,37 +17,43 @@ TEST_PHOTOS_DIR = Path(__file__).parent / "test_photos"
 # Test photos with GPS coordinates (verified via EXIF inspection)
 # Format: {relative_path: {expected_data}}
 PHOTOS_WITH_GPS = {
-    "2025-02/PXL_20250204_030635106.jpg": {
+    "2025/02/PXL_20250204_030635106.jpg": {
         "lat": Decimal("35.703335"),  # 35°42'12.06"N
         "lon": Decimal("139.774197"),  # 139°46'27.11"E
         "make": "Google",
         "model": "Pixel 9 Pro Fold",
     },
-    "2015-01/IMG_4756.JPG": {
+    "2015/01/IMG_4756.JPG": {
         "lat": Decimal("10.771247"),  # 10°46'16.49"N
         "lon": Decimal("106.693597"),  # 106°41'36.95"E
         "make": "Apple",
         "model": "iPhone 5s",
     },
-    "2025-02/PXL_20250217_025515106.jpg": {
+    "2025/02/PXL_20250217_025515106.jpg": {
         "lat": Decimal("34.665206"),  # 34°39'54.74"N
         "lon": Decimal("135.501572"),  # 135°30'5.66"E
         "make": "Google",
         "model": "Pixel 9 Pro Fold",
     },
-    "2025-02/PXL_20250224_104645452.jpg": {
+    "2025/02/PXL_20250224_104645452.jpg": {
         "lat": Decimal("33.589136"),  # 33°35'20.89"N
         "lon": Decimal("130.396217"),  # 130°23'46.38"E
         "make": "Google",
         "model": "Pixel 9 Pro Fold",
     },
+    "2020/01/IMG_4584.HEIC": {
+        "lat": Decimal("21.026856"),  # 21°1'36.68"N
+        "lon": Decimal("105.822564"),  # 105°49'21.23"E
+        "make": "Apple",
+        "model": "iPhone XS",
+    },
 }
 
 # Test photos without GPS (relative paths from TEST_PHOTOS_DIR)
 PHOTOS_WITHOUT_GPS = [
-    "2006-12/IMG_0243.JPG",  # Canon camera, no GPS
-    "2015-01/IMG_4725.PNG",  # Screenshot, no GPS
-    "2020-04/IMG_3247.JPG",  # iPhone 11, no GPS (originally HEIC)
+    "2006/12/IMG_0243.JPG",  # Canon camera, no GPS
+    "2015/01/IMG_4725.PNG",  # Screenshot, no GPS
+    "2020/04/IMG_3247.JPG",  # iPhone 11, no GPS (originally HEIC)
     "date-unknown/Screenshot_20250225-121230.png",  # Screenshot, no EXIF
 ]
 
@@ -59,7 +65,10 @@ class TestPhotoProcessingService:
     def test_discover_photo_files(self, tmp_path):
         """Test discovering photo files in directory."""
         # Copy test photos to tmp directory
-        for photo_path in ["2025-02/PXL_20250204_030635106.jpg", "2015-01/IMG_4756.JPG"]:
+        for photo_path in [
+            "2025/02/PXL_20250204_030635106.jpg",
+            "2015/01/IMG_4756.JPG",
+        ]:
             src = TEST_PHOTOS_DIR / photo_path
             dst = tmp_path / Path(photo_path).name
             shutil.copy2(src, dst)
@@ -67,7 +76,11 @@ class TestPhotoProcessingService:
         # Create subdirectory with more photos
         subdir = tmp_path / "subdir"
         subdir.mkdir()
-        for photo_path in ["2006-12/IMG_0243.JPG", "2015-01/IMG_4725.PNG"]:
+        for photo_path in [
+            "2006/12/IMG_0243.JPG",
+            "2015/01/IMG_4725.PNG",
+            "2020/01/IMG_4584.HEIC",
+        ]:
             src = TEST_PHOTOS_DIR / photo_path
             dst = subdir / Path(photo_path).name
             shutil.copy2(src, dst)
@@ -78,13 +91,13 @@ class TestPhotoProcessingService:
         service = PhotoProcessingService()
         files = service._discover_photo_files(str(tmp_path))
 
-        assert len(files) == 4
-        assert all(f.endswith((".jpg", ".JPG", ".PNG", ".png")) for f in files)
+        assert len(files) == 5
+        assert all(f.endswith((".jpg", ".JPG", ".PNG", ".png", ".HEIC", ".heic")) for f in files)
 
     def test_process_photo_with_gps(self):
         """Test processing photo with GPS coordinates."""
         # Use photo with known GPS coordinates
-        photo_rel_path = "2025-02/PXL_20250204_030635106.jpg"
+        photo_rel_path = "2025/02/PXL_20250204_030635106.jpg"
         expected = PHOTOS_WITH_GPS[photo_rel_path]
 
         photo_path = TEST_PHOTOS_DIR / photo_rel_path
@@ -127,7 +140,7 @@ class TestPhotoProcessingService:
 
     def test_process_photo_without_gps(self):
         """Test processing photo without GPS coordinates."""
-        photo_rel_path = "2006-12/IMG_0243.JPG"
+        photo_rel_path = "2006/12/IMG_0243.JPG"
         photo_path = TEST_PHOTOS_DIR / photo_rel_path
 
         service = PhotoProcessingService()
@@ -167,9 +180,9 @@ class TestPhotoProcessingService:
     def test_process_multiple_photos_with_gps(self, tmp_path):
         """Test processing multiple photos with different GPS locations."""
         photo_rel_paths = [
-            "2025-02/PXL_20250204_030635106.jpg",  # Tokyo area
-            "2015-01/IMG_4756.JPG",  # Vietnam area
-            "2025-02/PXL_20250224_104645452.jpg",  # Fukuoka area
+            "2025/02/PXL_20250204_030635106.jpg",  # Tokyo area
+            "2015/01/IMG_4756.JPG",  # Vietnam area
+            "2025/02/PXL_20250224_104645452.jpg",  # Fukuoka area
         ]
 
         for photo_rel_path in photo_rel_paths:
@@ -212,10 +225,10 @@ class TestPhotoProcessingService:
         """Test processing mix of photos with and without GPS."""
         # Copy photos
         photos_to_copy = [
-            "2025-02/PXL_20250204_030635106.jpg",  # Has GPS
-            "2006-12/IMG_0243.JPG",  # No GPS
-            "2015-01/IMG_4756.JPG",  # Has GPS
-            "2015-01/IMG_4725.PNG",  # No GPS (screenshot)
+            "2025/02/PXL_20250204_030635106.jpg",  # Has GPS
+            "2006/12/IMG_0243.JPG",  # No GPS
+            "2015/01/IMG_4756.JPG",  # Has GPS
+            "2015/01/IMG_4725.PNG",  # No GPS (screenshot)
         ]
 
         for photo_rel_path in photos_to_copy:
@@ -232,8 +245,8 @@ class TestPhotoProcessingService:
 
         # Verify photos with GPS
         for photo_rel_path in [
-            "2025-02/PXL_20250204_030635106.jpg",
-            "2015-01/IMG_4756.JPG",
+            "2025/02/PXL_20250204_030635106.jpg",
+            "2015/01/IMG_4756.JPG",
         ]:
             photo_name = Path(photo_rel_path).name
             photo = Photo.objects.get(file_name=photo_name)
@@ -242,7 +255,7 @@ class TestPhotoProcessingService:
             assert photo.h3_res_12 is not None
 
         # Verify photos without GPS
-        for photo_rel_path in ["2006-12/IMG_0243.JPG", "2015-01/IMG_4725.PNG"]:
+        for photo_rel_path in ["2006/12/IMG_0243.JPG", "2015/01/IMG_4725.PNG"]:
             photo_name = Path(photo_rel_path).name
             photo = Photo.objects.get(file_name=photo_name)
             assert photo.gps_latitude is None
@@ -251,7 +264,7 @@ class TestPhotoProcessingService:
 
     def test_process_single_photo_skip_existing(self):
         """Test that processing skips already-processed photos."""
-        photo_rel_path = "2025-02/PXL_20250204_030635106.jpg"
+        photo_rel_path = "2025/02/PXL_20250204_030635106.jpg"
         photo_path = TEST_PHOTOS_DIR / photo_rel_path
 
         service = PhotoProcessingService()
@@ -277,7 +290,7 @@ class TestPhotoProcessingService:
 
     def test_process_single_photo_force_reprocess(self):
         """Test force reprocess updates existing record."""
-        photo_rel_path = "2015-01/IMG_4756.JPG"
+        photo_rel_path = "2015/01/IMG_4756.JPG"
         photo_path = TEST_PHOTOS_DIR / photo_rel_path
 
         service = PhotoProcessingService()
@@ -310,7 +323,7 @@ class TestPhotoProcessingService:
         subdir = tmp_path / "vacation" / "2025"
         subdir.mkdir(parents=True, exist_ok=True)
 
-        photo_rel_path = "2025-02/PXL_20250204_030635106.jpg"
+        photo_rel_path = "2025/02/PXL_20250204_030635106.jpg"
         photo_name = Path(photo_rel_path).name
         src = TEST_PHOTOS_DIR / photo_rel_path
         dst = subdir / photo_name
@@ -331,9 +344,9 @@ class TestPhotoProcessingService:
     def test_perceptual_hash_uniqueness(self):
         """Test that different photos get different perceptual hashes."""
         photo_rel_paths = [
-            "2025-02/PXL_20250204_030635106.jpg",
-            "2015-01/IMG_4756.JPG",
-            "2006-12/IMG_0243.JPG",
+            "2025/02/PXL_20250204_030635106.jpg",
+            "2015/01/IMG_4756.JPG",
+            "2006/12/IMG_0243.JPG",
         ]
 
         service = PhotoProcessingService()
@@ -352,7 +365,7 @@ class TestPhotoProcessingService:
 
     def test_h3_indexes_different_resolutions(self):
         """Test that H3 indexes at different resolutions are calculated."""
-        photo_rel_path = "2025-02/PXL_20250217_025515106.jpg"
+        photo_rel_path = "2025/02/PXL_20250217_025515106.jpg"
         photo_path = TEST_PHOTOS_DIR / photo_rel_path
 
         service = PhotoProcessingService()
@@ -412,7 +425,7 @@ class TestPhotoProcessingService:
 
     def test_process_heic_converted_photo(self):
         """Test processing HEIC-converted photo (originally HEIC, saved as JPG)."""
-        photo_rel_path = "2020-04/IMG_3247.JPG"
+        photo_rel_path = "2020/04/IMG_3247.JPG"
         photo_path = TEST_PHOTOS_DIR / photo_rel_path
 
         service = PhotoProcessingService()
@@ -446,10 +459,57 @@ class TestPhotoProcessingService:
         assert photo.perceptual_hash is not None
         assert len(photo.perceptual_hash) == 16
 
+    def test_process_heic_photo_with_gps(self):
+        """Test processing native HEIC file with GPS coordinates."""
+        photo_rel_path = "2020/01/IMG_4584.HEIC"
+        expected = PHOTOS_WITH_GPS[photo_rel_path]
+
+        photo_path = TEST_PHOTOS_DIR / photo_rel_path
+
+        service = PhotoProcessingService()
+        result = service.process_single_photo(
+            str(photo_path),
+            str(TEST_PHOTOS_DIR),
+            force_reprocess=False,
+        )
+
+        assert result["action"] == "created"
+        photo = result["photo"]
+
+        # Verify basic info
+        assert photo.file_name == Path(photo_rel_path).name
+        assert photo.source_file == photo_rel_path
+
+        # Verify GPS coordinates (with tolerance for DMS conversion)
+        assert photo.gps_latitude is not None
+        assert photo.gps_longitude is not None
+        assert abs(photo.gps_latitude - expected["lat"]) < Decimal("0.0001")
+        assert abs(photo.gps_longitude - expected["lon"]) < Decimal("0.0001")
+
+        # Verify camera info in EXIF metadata
+        assert photo.exif_meta is not None
+        assert photo.exif_meta.get("Make") == expected["make"]
+        assert photo.exif_meta.get("Model") == expected["model"]
+
+        # Verify H3 indexes were calculated
+        assert photo.h3_res_3 is not None
+        assert photo.h3_res_6 is not None
+        assert photo.h3_res_9 is not None
+        assert photo.h3_res_12 is not None
+        assert photo.h3_res_15 is not None
+
+        # Verify perceptual hash
+        assert photo.perceptual_hash is not None
+        assert len(photo.perceptual_hash) == 16
+
+        # Verify GPS altitude
+        assert photo.gps_altitude is not None
+        assert abs(photo.gps_altitude - Decimal("12.859")) < Decimal("0.01")
+
     def test_perceptual_hash_detects_scaled_duplicate(self):
         """Test that perceptual hash detects scaled version as duplicate."""
-        original_rel_path = "2006-12/IMG_0243.JPG"
-        scaled_rel_path = "2006-12/IMG_0243_2x.JPG"
+        original_rel_path = "2006/12/IMG_0243.JPG"
+        scaled_rel_path = "2006/12/IMG_0243_2x.JPG"
 
         original_path = TEST_PHOTOS_DIR / original_rel_path
         scaled_path = TEST_PHOTOS_DIR / scaled_rel_path

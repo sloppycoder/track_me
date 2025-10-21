@@ -98,6 +98,7 @@ python scripts/create_test_photos.py ~/Photos test_photos --seed 42
 ### Technical Details
 
 - Uses PIL/Pillow for image processing
+- Uses pillow-heif for HEIC format support (required)
 - Lanczos resampling for high-quality downscaling
 - EXIF data is preserved via PIL's `exif` parameter
 - Aspect ratio maintained automatically

@@ -10,10 +10,14 @@ from pathlib import Path
 from typing import Optional
 
 import imagehash
+import pillow_heif
 from PIL import Image
-from PIL.ExifTags import TAGS
+from PIL.ExifTags import GPSTAGS, TAGS
 
 from myphoto.models import Photo
+
+# Register HEIF opener for HEIC support
+pillow_heif.register_heif_opener()
 
 logger = logging.getLogger(__name__)
 
@@ -206,13 +210,21 @@ class PhotoProcessingService:
                 exif_dict = {}
                 for tag_id, value in exif_data.items():
                     tag_name = TAGS.get(tag_id, tag_id)
-                    # Convert bytes to string for JSON serialization
-                    if isinstance(value, bytes):
-                        try:
-                            value = value.decode("utf-8")
-                        except UnicodeDecodeError:
-                            value = str(value)
-                    exif_dict[tag_name] = value
+                    # Convert to JSON-serializable format
+                    exif_dict[tag_name] = self._make_json_serializable(value)
+
+                # Extract GPS IFD separately (it's stored in a separate structure)
+                try:
+                    gps_ifd = exif_data.get_ifd(0x8825)  # GPS IFD tag
+                    if gps_ifd:
+                        gps_dict = {}
+                        for gps_tag_id, gps_value in gps_ifd.items():
+                            gps_tag_name = GPSTAGS.get(gps_tag_id, gps_tag_id)
+                            gps_dict[gps_tag_name] = self._make_json_serializable(gps_value)
+                        exif_dict["GPSInfo"] = gps_dict
+                except Exception:
+                    # GPS IFD not available or error reading it
+                    pass
 
                 photo.exif_meta = exif_dict
 
@@ -226,6 +238,42 @@ class PhotoProcessingService:
             logger.warning(f"Could not extract EXIF from {file_path}: {e}")
             photo.exif_meta = {}
 
+    def _make_json_serializable(self, value):
+        """
+        Convert EXIF values to JSON-serializable format.
+
+        Args:
+            value: EXIF value (can be bytes, IFDRational, dict, list, etc.)
+
+        Returns:
+            JSON-serializable value
+        """
+        # Handle bytes
+        if isinstance(value, bytes):
+            try:
+                return value.decode("utf-8")
+            except UnicodeDecodeError:
+                return str(value)
+
+        # Handle IFDRational (PIL's special type for rational numbers)
+        if hasattr(value, "numerator") and hasattr(value, "denominator"):
+            # Convert to float if possible, otherwise keep as fraction
+            try:
+                return float(value)
+            except (ValueError, ZeroDivisionError):
+                return f"{value.numerator}/{value.denominator}"
+
+        # Handle dictionaries recursively
+        if isinstance(value, dict):
+            return {k: self._make_json_serializable(v) for k, v in value.items()}
+
+        # Handle lists/tuples recursively
+        if isinstance(value, (list, tuple)):
+            return [self._make_json_serializable(item) for item in value]
+
+        # Return as-is for basic types
+        return value
+
     def _extract_gps_coordinates(self, photo: Photo):
         """
         Extract GPS coordinates from EXIF metadata.
@@ -237,30 +285,32 @@ class PhotoProcessingService:
             return
 
         try:
-            # PIL stores GPS info in GPSInfo tag
-            exif_data = photo.exif_meta
-
             # Check if GPS data exists
-            gps_info = exif_data.get("GPSInfo")
+            gps_info = photo.exif_meta.get("GPSInfo")
             if not gps_info:
                 return
 
-            # GPS coordinates are stored in specific tags
-            # This is a simplified version - actual GPS parsing is complex
-            # You may need to use a library like piexif or exif for better GPS parsing
+            # Extract GPS coordinates from GPSInfo dict
+            if "GPSLatitude" in gps_info and "GPSLongitude" in gps_info:
+                lat = self._parse_gps_coordinate(gps_info["GPSLatitude"])
+                lon = self._parse_gps_coordinate(gps_info["GPSLongitude"])
 
-            # For now, try to extract from common EXIF fields
-            # Many cameras store it as decimal in custom fields
-            if "GPSLatitude" in exif_data and "GPSLongitude" in exif_data:
-                lat = self._parse_gps_coordinate(exif_data["GPSLatitude"])
-                lon = self._parse_gps_coordinate(exif_data["GPSLongitude"])
+                # Apply hemisphere (N/S for latitude, E/W for longitude)
+                if lat is not None and "GPSLatitudeRef" in gps_info:
+                    if gps_info["GPSLatitudeRef"] == "S":
+                        lat = -lat
+
+                if lon is not None and "GPSLongitudeRef" in gps_info:
+                    if gps_info["GPSLongitudeRef"] == "W":
+                        lon = -lon
 
                 if lat is not None and lon is not None:
                     photo.gps_latitude = Decimal(str(lat))
                     photo.gps_longitude = Decimal(str(lon))
 
-                    if "GPSAltitude" in exif_data:
-                        alt = exif_data["GPSAltitude"]
+                    # Extract altitude if available
+                    if "GPSAltitude" in gps_info:
+                        alt = gps_info["GPSAltitude"]
                         if isinstance(alt, (int, float)):
                             photo.gps_altitude = Decimal(str(alt))
 
@@ -273,12 +323,12 @@ class PhotoProcessingService:
 
         GPS coordinates in EXIF can be in various formats:
         - Decimal: 37.7749
-        - DMS: (37, 46, 29.64)
+        - DMS tuple/list: (37, 46, 29.64) or [37, 46, 29.64]
         """
         if isinstance(coordinate, (int, float)):
             return float(coordinate)
 
-        if isinstance(coordinate, tuple) and len(coordinate) == 3:
+        if isinstance(coordinate, (tuple, list)) and len(coordinate) == 3:
             # DMS format: (degrees, minutes, seconds)
             degrees, minutes, seconds = coordinate
             return float(degrees) + float(minutes) / 60 + float(seconds) / 3600

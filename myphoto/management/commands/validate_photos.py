@@ -12,7 +12,6 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("csv_file", type=str, help="Path to the CSV file to validate against")
 
-    # ruff: noqa: C901
     def handle(self, *args, **options):
         csv_file = options["csv_file"]
 
