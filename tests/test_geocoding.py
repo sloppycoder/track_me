@@ -28,7 +28,10 @@ class TestGeocodingService:
         with pytest.raises(ValueError, match="Google Maps API key required"):
             GeocodingService()
 
-    @pytest.mark.skipif(not os.environ["GOOGLE_MAPS_API_KEY"], reason="No GoogleMaps API key")
+    @pytest.mark.skipif(
+        not os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+        reason="No GoogleMaps API key",
+    )
     def test_geocode_heic_photo_live_api(self):
         """Test geocoding HEIC photo with live Google Maps API (Vietnam location)."""
         # Process HEIC file first to extract GPS
