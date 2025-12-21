@@ -80,10 +80,10 @@ All processing logic is automatic - no separate commands needed for H3 or hashin
 
 ## Documentation
 
-- [PHOTO_PROCESSING_README.md](myphoto/PHOTO_PROCESSING_README.md) - Photo processing details
-- [GEOCODING_README.md](myphoto/GEOCODING_README.md) - Google Maps setup & usage
-- [VALIDATION_README.md](myphoto/VALIDATION_README.md) - CSV validation guide
-- [DUPLICATE_DETECTION_README.md](myphoto/DUPLICATE_DETECTION_README.md) - Perceptual hashing info
+- [PHOTO_PROCESSING_README.md](myphoto/docs/PHOTO_PROCESSING_README.md) - Photo processing details
+- [GEOCODING_README.md](myphoto/docs/GEOCODING_README.md) - Google Maps setup & usage
+- [VALIDATION_README.md](myphoto/docs/VALIDATION_README.md) - CSV validation guide
+- [DUPLICATE_DETECTION_README.md](myphoto/docs/DUPLICATE_DETECTION_README.md) - Perceptual hashing info
 
 ## Tests
 
