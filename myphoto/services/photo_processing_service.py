@@ -7,7 +7,7 @@ import logging
 import os
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
 import imagehash
 import pillow_heif
@@ -32,6 +32,18 @@ IMAGE_EXTENSIONS = {
 }
 
 
+class ProcessingStats(TypedDict):
+    """Statistics for photo processing operations."""
+
+    total_files: int
+    processed: int
+    skipped: int
+    updated: int
+    created: int
+    errors: int
+    error_details: list[str]
+
+
 class PhotoProcessingService:
     """Service to process photo files and extract all metadata."""
 
@@ -44,7 +56,9 @@ class PhotoProcessingService:
         """
         self.progress_callback = progress_callback or (lambda x: None)
 
-    def process_directory(self, directory_path: str, force_reprocess: bool = False) -> dict:
+    def process_directory(
+        self, directory_path: str, force_reprocess: bool = False
+    ) -> ProcessingStats:
         """
         Process all photos in a directory recursively.
 
@@ -55,7 +69,7 @@ class PhotoProcessingService:
         Returns:
             dict with statistics
         """
-        stats = {
+        stats: ProcessingStats = {
             "total_files": 0,
             "processed": 0,
             "skipped": 0,

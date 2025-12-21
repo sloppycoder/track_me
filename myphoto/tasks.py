@@ -5,13 +5,16 @@ These functions can be called from django-q2 async tasks or celery workers.
 
 import logging
 
-from myphoto.services.geocoding_service import GeocodingService
-from myphoto.services.photo_processing_service import PhotoProcessingService
+from myphoto.services.geocoding_service import GeocodingService, GeocodingStats
+from myphoto.services.photo_processing_service import (
+    PhotoProcessingService,
+    ProcessingStats,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def process_photos_task(directory_path: str, force_reprocess: bool = False) -> dict:
+def process_photos_task(directory_path: str, force_reprocess: bool = False) -> ProcessingStats:
     """
     Background task to process photos from a directory.
 
@@ -60,7 +63,7 @@ def process_photos_task(directory_path: str, force_reprocess: bool = False) -> d
         raise
 
 
-def geocode_photos_task(h3_resolution: int = 9, recalculate: bool = False) -> dict:
+def geocode_photos_task(h3_resolution: int = 9, recalculate: bool = False) -> GeocodingStats:
     """
     Background task to geocode photos using Google Maps API.
 

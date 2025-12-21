@@ -6,7 +6,7 @@ Uses H3 spatial indexing to batch geocode photos at similar locations.
 import logging
 from collections import defaultdict
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TypedDict
 
 import h3
 from django.conf import settings
@@ -16,6 +16,17 @@ from django.utils import timezone as django_timezone
 from myphoto.models import Photo
 
 logger = logging.getLogger(__name__)
+
+
+class GeocodingStats(TypedDict):
+    """Statistics for geocoding operations."""
+
+    total_photos: int
+    processed_photos: int
+    skipped_photos: int
+    api_calls: int
+    errors: int
+    error_details: list[str]
 
 
 class GeocodingService:
@@ -49,7 +60,7 @@ class GeocodingService:
         batch_size: int = 100,
         recalculate: bool = False,
         max_api_calls: Optional[int] = None,
-    ) -> dict:
+    ) -> GeocodingStats:
         """
         Geocode photos by grouping them using H3 spatial index.
 
@@ -66,7 +77,7 @@ class GeocodingService:
         Returns:
             dict with statistics
         """
-        stats = {
+        stats: GeocodingStats = {
             "total_photos": 0,
             "processed_photos": 0,
             "skipped_photos": 0,
