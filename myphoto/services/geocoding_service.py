@@ -44,7 +44,11 @@ class GeocodingService:
         self.gmaps = googlemaps.Client(key=self.api_key)
 
     def geocode_photos(
-        self, h3_resolution: int = 9, batch_size: int = 100, recalculate: bool = False
+        self,
+        h3_resolution: int = 9,
+        batch_size: int = 100,
+        recalculate: bool = False,
+        max_api_calls: Optional[int] = None,
     ) -> dict:
         """
         Geocode photos by grouping them using H3 spatial index.
@@ -57,6 +61,7 @@ class GeocodingService:
                           Lower resolution = fewer API calls but less precise
             batch_size: Number of photos to process in each batch
             recalculate: If True, recalculate even if already geocoded
+            max_api_calls: Maximum number of API calls to make (stops after limit)
 
         Returns:
             dict with statistics
@@ -92,6 +97,17 @@ class GeocodingService:
 
         # Geocode each H3 cell (one API call per cell)
         for h3_cell, photos in h3_groups.items():
+            # Check if we've reached the API call limit
+            if max_api_calls and stats["api_calls"] >= max_api_calls:
+                remaining_photos = (
+                    stats["total_photos"] - stats["processed_photos"] - stats["skipped_photos"]
+                )
+                self.progress_callback(
+                    f"Reached API call limit ({max_api_calls}). "
+                    f"Stopping. {remaining_photos} photos remaining."
+                )
+                break
+
             try:
                 # Get representative coordinates (H3 cell center)
                 lat, lon = h3.cell_to_latlng(h3_cell)
@@ -105,8 +121,18 @@ class GeocodingService:
                     self._apply_geocoding_to_photos(photos, location_data)
                     stats["processed_photos"] += len(photos)
                 else:
+                    # Get photo file names for better error reporting
+                    photo_names = [p.file_name for p in photos[:3]]
+                    if len(photos) > 3:
+                        photo_names.append(f"... and {len(photos) - 3} more")
+
+                    error_msg = (
+                        f"No geocoding result for location ({lat:.4f}, {lon:.4f}). "
+                        f"Affected photos: {', '.join(photo_names)}"
+                    )
+                    logger.warning(error_msg)
                     stats["skipped_photos"] += len(photos)
-                    logger.warning(f"No geocoding result for H3 cell {h3_cell}")
+                    stats["error_details"].append(error_msg)
 
                 # Progress update
                 if stats["api_calls"] % 10 == 0:
@@ -116,7 +142,22 @@ class GeocodingService:
                     )
 
             except Exception as e:
-                error_msg = f"Error geocoding H3 cell {h3_cell}: {e}"
+                # Get photo file names for better error reporting
+                photo_names = [p.file_name for p in photos[:3]]
+                if len(photos) > 3:
+                    photo_names.append(f"... and {len(photos) - 3} more")
+
+                # Try to get coordinates for error message
+                try:
+                    lat, lon = h3.cell_to_latlng(h3_cell)
+                    location_str = f"location ({lat:.4f}, {lon:.4f})"
+                except Exception:
+                    location_str = f"H3 cell {h3_cell}"
+
+                error_msg = (
+                    f"Geocoding failed for {location_str}: {e}. "
+                    f"Affected photos: {', '.join(photo_names)}"
+                )
                 logger.error(error_msg)
                 stats["errors"] += 1
                 stats["error_details"].append(error_msg)
@@ -153,13 +194,22 @@ class GeocodingService:
             dict with location info or None if failed
         """
         try:
+            # Call reverse geocoding API
             results = self.gmaps.reverse_geocode((lat, lon))  # type: ignore[attr-defined]
 
-            if not results:
+            if not results or not isinstance(results, list) or len(results) == 0:
+                logger.warning(
+                    f"No geocoding results for coordinates ({lat}, {lon}). "
+                    "Location may be in a remote area or ocean."
+                )
                 return None
 
             # Parse first result
             result = results[0]
+            if not isinstance(result, dict):
+                logger.warning(f"Invalid geocoding result format for ({lat}, {lon})")
+                return None
+
             location_data = {
                 "formatted_address": result.get("formatted_address", ""),
                 "country_code": None,
@@ -173,9 +223,17 @@ class GeocodingService:
                     break
 
             # Get timezone
-            timezone_result = self.gmaps.timezone((lat, lon))  # type: ignore[attr-defined]
-            if timezone_result and timezone_result.get("status") == "OK":
-                location_data["timezone_id"] = timezone_result.get("timeZoneId")
+            try:
+                timezone_result = self.gmaps.timezone((lat, lon))  # type: ignore[attr-defined]
+                if (
+                    timezone_result
+                    and isinstance(timezone_result, dict)
+                    and timezone_result.get("status") == "OK"
+                ):
+                    location_data["timezone_id"] = timezone_result.get("timeZoneId")
+            except Exception as tz_error:
+                logger.warning(f"Timezone lookup failed for ({lat}, {lon}): {tz_error}")
+                # Continue without timezone - not critical
 
             return location_data
 

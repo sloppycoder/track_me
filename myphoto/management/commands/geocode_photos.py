@@ -23,15 +23,23 @@ class Command(BaseCommand):
             type=str,
             help="Google Maps API key (or use GOOGLE_MAPS_API_KEY in settings)",
         )
+        parser.add_argument(
+            "--max-api-calls",
+            type=int,
+            help="Maximum number of API calls to make (useful for limiting costs)",
+        )
 
     def handle(self, *args, **options):
         h3_resolution = options["h3_resolution"]
         recalculate = options["recalculate"]
         api_key = options["api_key"]
+        max_api_calls = options["max_api_calls"]
 
         self.stdout.write(f"Geocoding photos at H3 resolution {h3_resolution}")
         if recalculate:
             self.stdout.write(self.style.WARNING("Recalculate mode enabled"))
+        if max_api_calls:
+            self.stdout.write(f"API call limit: {max_api_calls}")
 
         try:
             # Create service
@@ -43,6 +51,7 @@ class Command(BaseCommand):
             stats = service.geocode_photos(
                 h3_resolution=h3_resolution,
                 recalculate=recalculate,
+                max_api_calls=max_api_calls,
             )
 
             # Display results
