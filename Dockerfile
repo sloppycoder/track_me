@@ -61,4 +61,3 @@ ENV PATH="/app/.venv/bin:$PATH"
 USER appuser
 
 CMD  ["/bin/sh", "/app/entrypoint.sh"]
-
