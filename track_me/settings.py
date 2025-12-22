@@ -29,11 +29,13 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django_tailwind_cli",
     "myphoto",
 ]
 
-TAILWIND_CLI_VERSION = "2.2.18"  # use tailwind_extra cli that supports DaisyUI
+TAILWIND_CLI_VERSION = "2.7.5"  # use tailwind_extra cli that supports DaisyUI
 TAILWIND_CLI_USE_DAISY_UI = True
+TAILWIND_CLI_DIST_CSS = "css/tailwind.css"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

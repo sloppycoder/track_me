@@ -28,3 +28,8 @@ cdk.out
 # local files
 *key*.json
 tmp/*
+.claude/settings.local.json
+.django_tailwind_cli/
+assets/css/
+staticfiles/css/
+.playwright-mcp/*
