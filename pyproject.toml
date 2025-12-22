@@ -7,6 +7,7 @@ readme = "README.md"
 
 requires-python = ">= 3.12"
 dependencies = [
+    "dj-database-url>=3.0.1",
     "django>=5.2",
     "django-tailwind-cli>=4.4.2",
     "googlemaps>=4.10.0",
@@ -15,6 +16,7 @@ dependencies = [
     "imagehash>=4.3.2",
     "pillow>=12.0.0",
     "pillow-heif>=1.1.1",
+    "psycopg>=3.3.2",
     "python-dotenv >= 1.1.1",
     "pytz>=2025.2",
     "pyyaml>=6.0.2",

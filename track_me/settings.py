@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -66,13 +67,21 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "track_me.wsgi.application"
 
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "tmp/trackme.db",
+postgres_options = {
+    "OPTIONS": {
+        "sslmode": "require",
+        "connect_timeout": 5,
+        "options": "-c statement_timeout=10000",
     }
 }
+database_config = (
+    dj_database_url.config(
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+    | postgres_options
+)
+DATABASES = {"default": database_config}
 
 
 # Password validation

@@ -252,6 +252,20 @@ class PhotoProcessingService:
             logger.warning(f"Could not extract EXIF from {file_path}: {e}")
             photo.exif_meta = {}
 
+    def _sanitize_string(self, text: str) -> str:
+        """
+        Remove null bytes and other problematic characters from strings.
+
+        PostgreSQL doesn't allow null bytes (\x00 or \u0000) in text fields.
+
+        Args:
+            text: String to sanitize
+
+        Returns:
+            Sanitized string with null bytes removed
+        """
+        return text.replace("\x00", "")
+
     def _make_json_serializable(self, value):
         """
         Convert EXIF values to JSON-serializable format.
@@ -265,9 +279,15 @@ class PhotoProcessingService:
         # Handle bytes
         if isinstance(value, bytes):
             try:
-                return value.decode("utf-8")
+                decoded = value.decode("utf-8")
+                return self._sanitize_string(decoded)
             except UnicodeDecodeError:
-                return str(value)
+                text = str(value)
+                return self._sanitize_string(text)
+
+        # Handle strings - sanitize them
+        if isinstance(value, str):
+            return self._sanitize_string(value)
 
         # Handle IFDRational (PIL's special type for rational numbers)
         if hasattr(value, "numerator") and hasattr(value, "denominator"):

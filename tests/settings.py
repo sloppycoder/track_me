@@ -7,8 +7,7 @@ from track_me.settings import *
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "tmp/trackme_test.db",
-        # "NAME": ":memory:",
+        "NAME": ":memory:",
     }
 }
 
