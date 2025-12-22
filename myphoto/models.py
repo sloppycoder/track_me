@@ -79,6 +79,10 @@ class Photo(models.Model):
         blank=True,
         help_text="When geocoding was last performed for this photo",
     )
+    is_location_manual = models.BooleanField(
+        default=False,
+        help_text="Whether location was manually set/updated by user",
+    )
 
     # H3 spatial indexes for hierarchical visualization
     h3_res_15 = models.CharField(
