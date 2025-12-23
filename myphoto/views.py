@@ -20,6 +20,112 @@ from myphoto.services.thumbnail_service import ThumbnailService
 logger = logging.getLogger(__name__)
 
 
+def parse_smart_search(query_str):
+    """
+    Smart search parser that automatically detects search intent.
+
+    Parsing logic:
+    1. Date range: "2004 to 2006", "jan 2004 to dec 2005", "2004-01-01 to 2006-12-31"
+    2. Single date/year/month: "2004", "jan 2004", "2005-01-01"
+    3. Country code: 2 uppercase letters (e.g., "US", "SG")
+    4. Location text: everything else
+
+    Returns:
+        dict with keys:
+        - search_type: "date_range", "date", "country_code", "location", or "unknown"
+        - date_from: datetime or None
+        - date_to: datetime or None
+        - text_search: string or None
+        - country_code: string or None
+    """
+    if not query_str or not query_str.strip():
+        return {
+            "search_type": "unknown",
+            "date_from": None,
+            "date_to": None,
+            "text_search": None,
+            "country_code": None,
+        }
+
+    query = query_str.strip()
+
+    # Check for date range patterns: "X to Y" or "X - Y"
+    # Common patterns: "2004 to 2006", "jan 2004 to dec 2005"
+    date_range_patterns = [" to ", " - ", " – ", " — "]  # Various dash types
+    for pattern in date_range_patterns:
+        if pattern in query.lower():
+            parts = query.lower().split(pattern)
+            if len(parts) == 2:
+                start_str, end_str = parts
+                start_date, _ = parse_date_filter(start_str.strip())
+                _, end_date = parse_date_filter(end_str.strip())
+
+                if start_date and end_date:
+                    return {
+                        "search_type": "date_range",
+                        "date_from": start_date,
+                        "date_to": end_date,
+                        "text_search": None,
+                        "country_code": None,
+                    }
+            break  # Only check first matching pattern
+
+    # Check if it's a country code (2 uppercase letters)
+    if len(query) == 2 and query.isupper() and query.isalpha():
+        return {
+            "search_type": "country_code",
+            "date_from": None,
+            "date_to": None,
+            "text_search": None,
+            "country_code": query,
+        }
+
+    # Try to parse as a date (year, month-year, or specific date)
+    # Check if it looks like a date pattern
+    date_indicators = [
+        query.isdigit() and len(query) == 4,  # Year like "2004"
+        any(
+            month in query.lower()
+            for month in [
+                "jan",
+                "feb",
+                "mar",
+                "apr",
+                "may",
+                "jun",
+                "jul",
+                "aug",
+                "sep",
+                "oct",
+                "nov",
+                "dec",
+            ]
+        ),  # Month names
+        "-" in query and any(c.isdigit() for c in query),  # ISO date format
+        "/" in query and any(c.isdigit() for c in query),  # Slash date format
+    ]
+
+    if any(date_indicators):
+        start_date, end_date = parse_date_filter(query)
+        if start_date and end_date:
+            return {
+                "search_type": "date",
+                "date_from": start_date,
+                "date_to": end_date,
+                "text_search": None,
+                "country_code": None,
+            }
+
+    # Default to location text search
+    return {
+        "search_type": "location",
+        "date_from": None,
+        "date_to": None,
+        "text_search": query,
+        "country_code": None,
+    }
+
+
 def parse_date_filter(date_str):
     """
     Parse flexible date formats for filtering using dateparser library.
@@ -92,35 +198,43 @@ def photo_list(request):
 @require_GET  # type: ignore[misc]
 def api_photo_search(request):
     """
-    API endpoint to search photos by text and date filters.
+    API endpoint to search photos with smart query parsing.
 
     Query params:
-        q: Search text (location or country_code)
-        date_from: Start date in flexible format
-        date_to: End date in flexible format
+        q: Smart search query that auto-detects:
+           - Date ranges: "2004 to 2006", "jan 2004 to dec 2005"
+           - Single dates: "2004", "jan 2004", "2005-01-01"
+           - Country codes: "US", "SG" (2 uppercase letters)
+           - Location text: "Singapore", "Tokyo"
         limit: Maximum results (default: MAX_PHOTOS_PER_PAGE)
     """
-    query_text = request.GET.get("q", "").strip()
-    date_from_str = request.GET.get("date_from", "").strip()
-    date_to_str = request.GET.get("date_to", "").strip()
+    query_str = request.GET.get("q", "").strip()
     limit = int(request.GET.get("limit", settings.MAX_PHOTOS_PER_PAGE))
 
     # Start with all photos
     queryset = Photo.objects.all()
 
-    # Text search (case-insensitive on location or country_code)
-    if query_text:
+    # Parse the smart search query
+    search_params = parse_smart_search(query_str)
+
+    # Apply filters based on search type
+    if search_params["search_type"] == "country_code":
+        # Search by country code
+        queryset = queryset.filter(country_code__iexact=search_params["country_code"])
+
+    elif search_params["search_type"] == "location":
+        # Text search on location or country_code
         queryset = queryset.filter(
-            Q(location__icontains=query_text) | Q(country_code__icontains=query_text)
+            Q(location__icontains=search_params["text_search"])
+            | Q(country_code__icontains=search_params["text_search"])
         )
 
-    # Date filtering
-    if date_from_str or date_to_str:
-        start_date, _ = parse_date_filter(date_from_str)
-        _, end_date = parse_date_filter(date_to_str)
+    elif search_params["search_type"] in ["date", "date_range"]:
+        # Date filtering
+        start_date = search_params["date_from"]
+        end_date = search_params["date_to"]
 
         if start_date and end_date:
-            # Range query
             queryset = queryset.filter(date_time_taken__range=[start_date, end_date])
         elif start_date:
             queryset = queryset.filter(date_time_taken__gte=start_date)

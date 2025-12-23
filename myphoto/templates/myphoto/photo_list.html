@@ -11,35 +11,13 @@
       <div class="flex gap-2 items-end">
         <div class="flex-1">
           <label class="label">
-            <span class="label-text">Search location or country</span>
+            <span class="label-text">Smart Search</span>
           </label>
           <input
             id="search-box"
             type="text"
-            placeholder="Search by location or country code..."
+            placeholder="Try: Singapore, 2004, jan 2004 to dec 2005, US, 2024-01-01..."
             class="input input-bordered w-full"
-          />
-        </div>
-        <div>
-          <label class="label">
-            <span class="label-text">Date From</span>
-          </label>
-          <input
-            id="date-from"
-            type="text"
-            placeholder="2004 or jan 2004"
-            class="input input-bordered"
-          />
-        </div>
-        <div>
-          <label class="label">
-            <span class="label-text">Date To</span>
-          </label>
-          <input
-            id="date-to"
-            type="text"
-            placeholder="2006-07-21"
-            class="input input-bordered"
           />
         </div>
         <button id="search-btn" class="btn btn-primary">Search</button>
@@ -47,6 +25,9 @@
       <div class="mt-2 text-sm text-gray-600">
         <span id="results-count">No photos loaded</span>
         <span class="ml-4" id="selection-count"></span>
+      </div>
+      <div class="mt-1 text-xs text-gray-500">
+        <strong>Tips:</strong> Location (Singapore), Country (US), Year (2004), Month (jan 2004), Date range (2004 to 2006)
       </div>
     </div>
 
@@ -196,8 +177,6 @@ function placeMarker(location) {
 // Search photos
 async function searchPhotos() {
   const query = document.getElementById('search-box').value.trim();
-  const dateFrom = document.getElementById('date-from').value.trim();
-  const dateTo = document.getElementById('date-to').value.trim();
 
   // Show loading
   document.getElementById('loading').classList.remove('hidden');
@@ -206,8 +185,6 @@ async function searchPhotos() {
 
   const params = new URLSearchParams({
     q: query,
-    date_from: dateFrom,
-    date_to: dateTo,
     limit: MAX_PHOTOS
   });
 
@@ -594,11 +571,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Search button
   document.getElementById('search-btn').addEventListener('click', searchPhotos);
 
-  // Enter key in search boxes
-  ['search-box', 'date-from', 'date-to'].forEach(id => {
-    document.getElementById(id).addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') searchPhotos();
-    });
+  // Enter key in search box
+  document.getElementById('search-box').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') searchPhotos();
   });
 
   // Location buttons
