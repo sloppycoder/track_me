@@ -4,6 +4,13 @@
 
 {% block content %}
 {% csrf_token %}
+<!-- Toast Message Container -->
+<div id="toast-container" class="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 hidden">
+  <div class="alert alert-success shadow-lg">
+    <span id="toast-message"></span>
+  </div>
+</div>
+
 <div class="flex h-screen overflow-hidden">
   <!-- Main Content (2/3 width) -->
   <div class="w-2/3 flex flex-col">
@@ -91,28 +98,40 @@
 
 <!-- Photo Detail Modal -->
 <dialog id="photo-modal" class="modal">
-  <div class="modal-box max-w-4xl">
+  <div class="modal-box max-w-7xl max-h-[95vh] overflow-y-auto">
     <form method="dialog">
       <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
     </form>
-    <h3 class="font-bold text-lg mb-4" id="modal-title">Photo Details</h3>
+
+    <!-- Header with Photo Details and Information -->
+    <div class="mb-4">
+      <h3 class="font-bold text-lg mb-2" id="modal-title">Photo Details</h3>
+
+      <!-- Photo Information -->
+      <div class="flex gap-6 text-sm">
+        <!-- Column 1: File Name & Date -->
+        <div class="flex-1 space-y-1">
+          <div><strong>File Name:</strong> <span id="modal-filename"></span></div>
+          <div><strong>Date Taken:</strong> <span id="modal-date"></span></div>
+        </div>
+
+        <!-- Column 2: Location & Country -->
+        <div class="flex-1 space-y-1">
+          <div><strong>Location:</strong> <span id="modal-location"></span></div>
+          <div><strong>Country Code:</strong> <span id="modal-country"></span></div>
+        </div>
+
+        <!-- Column 3: GPS & Manual -->
+        <div class="flex-1 space-y-1">
+          <div><strong>GPS:</strong> <span id="modal-gps"></span></div>
+          <div id="modal-location-source" class="hidden">Manual</div>
+        </div>
+      </div>
+    </div>
 
     <!-- Large Photo Preview -->
     <div class="mb-4 flex justify-center bg-gray-100 rounded">
-      <img id="modal-photo" src="" alt="" class="max-h-96 object-contain rounded">
-    </div>
-
-    <!-- Photo Information -->
-    <div class="grid grid-cols-2 gap-2 text-sm">
-      <div><strong>File Name:</strong> <span id="modal-filename"></span></div>
-      <div><strong>Date Taken:</strong> <span id="modal-date"></span></div>
-      <div><strong>Location:</strong> <span id="modal-location"></span></div>
-      <div><strong>Country Code:</strong> <span id="modal-country"></span></div>
-      <div><strong>GPS:</strong> <span id="modal-gps"></span></div>
-      <div>
-        <strong>Location Source:</strong>
-        <span id="modal-manual" class="badge badge-sm"></span>
-      </div>
+      <img id="modal-photo" src="" alt="" class="max-h-[65vh] max-w-full object-contain rounded">
     </div>
 
     <div class="modal-action">
@@ -136,6 +155,34 @@ const state = {
 };
 
 const MAX_PHOTOS = {{ max_photos }};
+
+// Show toast message that auto-dismisses after 4 seconds
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  const messageEl = document.getElementById('toast-message');
+  const alert = container.querySelector('.alert');
+
+  // Set message
+  messageEl.textContent = message;
+
+  // Set alert type
+  alert.className = 'alert shadow-lg';
+  if (type === 'success') {
+    alert.classList.add('alert-success');
+  } else if (type === 'error') {
+    alert.classList.add('alert-error');
+  } else if (type === 'warning') {
+    alert.classList.add('alert-warning');
+  }
+
+  // Show toast
+  container.classList.remove('hidden');
+
+  // Auto-dismiss after 4 seconds
+  setTimeout(() => {
+    container.classList.add('hidden');
+  }, 4000);
+}
 
 // Initialize Google Maps
 function initMap() {
@@ -202,7 +249,7 @@ async function searchPhotos() {
 
   } catch (error) {
     console.error('Search failed:', error);
-    alert('Search failed: ' + error.message);
+    showToast('Search failed: ' + error.message, 'error');
   } finally {
     document.getElementById('loading').classList.add('hidden');
   }
@@ -420,7 +467,7 @@ async function handleLocateClick() {
   const locationText = document.getElementById('location-input').value.trim();
 
   if (!locationText) {
-    alert('Please enter a location');
+    showToast('Please enter a location', 'warning');
     return;
   }
 
@@ -434,13 +481,13 @@ async function handleLocateClick() {
         const location = results[0].geometry.location;
         showLocationOnMap(location.lat(), location.lng());
       } else {
-        alert('Location not found. Try a different search term.');
+        showToast('Location not found. Try a different search term.', 'warning');
       }
       btn.disabled = false;
       btn.textContent = 'Locate';
     });
   } catch (error) {
-    alert('Geocoding failed: ' + error.message);
+    showToast('Geocoding failed: ' + error.message, 'error');
     btn.disabled = false;
     btn.textContent = 'Locate';
   }
@@ -449,13 +496,13 @@ async function handleLocateClick() {
 // Assign button: Update photos with GPS from marker
 async function handleAssignClick() {
   if (!state.marker) {
-    alert('Please place a marker on the map first');
+    showToast('Please place a marker on the map first', 'warning');
     return;
   }
 
   const selectedIds = Array.from(state.selectedPhotos);
   if (selectedIds.length === 0) {
-    alert('Please select at least one photo');
+    showToast('Please select at least one photo', 'warning');
     return;
   }
 
@@ -492,17 +539,17 @@ async function handleAssignClick() {
 
     if (result.success) {
       const message = result.warning
-        ? `${result.warning}\n${result.count} photo(s) updated`
-        : `Successfully updated ${result.count} photo(s)\nLocation: ${result.location || 'N/A'}\nCountry: ${result.country_code || 'N/A'}`;
-      alert(message);
+        ? `${result.warning} - ${result.count} photo(s) updated`
+        : `Successfully updated ${result.count} photo(s) - ${result.location || 'N/A'}`;
+      showToast(message, 'success');
       // Refresh search to get updated data
       searchPhotos();
     } else {
-      alert(`Error: ${result.error || 'Unknown error'}`);
+      showToast(`Error: ${result.error || 'Unknown error'}`, 'error');
     }
   } catch (error) {
     console.error('Assignment error:', error);
-    alert('Update failed: ' + error.message);
+    showToast('Update failed: ' + error.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Assign';
@@ -561,17 +608,12 @@ function showPhotoModal(photo) {
     document.getElementById('modal-gps').textContent = 'N/A';
   }
 
-  // Location source badge
-  const manualBadge = document.getElementById('modal-manual');
+  // Location source - only show if manually assigned
+  const locationSource = document.getElementById('modal-location-source');
   if (photo.is_location_manual === true) {
-    manualBadge.textContent = 'Manual';
-    manualBadge.className = 'badge badge-sm badge-warning';
-  } else if (photo.is_location_manual === false) {
-    manualBadge.textContent = 'Auto-geocoded';
-    manualBadge.className = 'badge badge-sm badge-info';
+    locationSource.classList.remove('hidden');
   } else {
-    manualBadge.textContent = 'Unknown';
-    manualBadge.className = 'badge badge-sm badge-ghost';
+    locationSource.classList.add('hidden');
   }
 
   // Show modal (DaisyUI modal)
