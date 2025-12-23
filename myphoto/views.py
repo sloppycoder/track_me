@@ -3,6 +3,7 @@ import logging
 from calendar import monthrange
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 import dateparser
 from django.conf import settings
@@ -203,7 +204,7 @@ def api_photo_preview(request, photo_id):
     if ".." in photo.source_file or photo.source_file.startswith("/"):
         raise Http404("Invalid file path")
 
-    photo_path = settings.PHOTOS_BASE_DIR / photo.source_file
+    photo_path = Path(settings.PHOTOS_BASE_DIR) / photo.source_file
 
     if not photo_path.exists():
         raise Http404(f"Photo file not found: {photo.source_file}")

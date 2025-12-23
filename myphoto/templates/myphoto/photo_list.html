@@ -108,7 +108,7 @@
 </div>
 
 <!-- Photo Detail Modal -->
-<div id="photo-modal" class="modal">
+<dialog id="photo-modal" class="modal">
   <div class="modal-box max-w-4xl">
     <form method="dialog">
       <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
@@ -137,7 +137,7 @@
       <button class="btn btn-primary" onclick="document.getElementById('photo-modal').close()">Close</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <!-- Google Maps API -->
 <script src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&callback=initMap&libraries=places" async defer></script>
