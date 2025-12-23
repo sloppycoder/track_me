@@ -11,6 +11,19 @@ load_dotenv(dotenv_path=BASE_DIR / ".env")
 devkey = "django-insecure-7@l%ik7thl2qo+8#zm%^6e(+72c!1310tujddhw2bgqk6f)r7m"
 SECRET_KEY = os.environ.get("SECRET_KEY", devkey)
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
+
+# Photo thumbnail settings
+THUMBNAIL_CACHE_DIR = Path(os.getenv("THUMBNAIL_CACHE_DIR", str(BASE_DIR / "tmp" / "thumbnails")))
+THUMBNAIL_SIZE = (
+    int(os.getenv("THUMBNAIL_WIDTH", "300")),
+    int(os.getenv("THUMBNAIL_HEIGHT", "200")),
+)
+MAX_PHOTOS_PER_PAGE = int(os.getenv("MAX_PHOTOS_PER_PAGE", "200"))
+PHOTOS_BASE_DIR = os.getenv("PHOTOS_BASE_DIR", "")
+
+# Ensure thumbnail cache directory exists
+THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
 ALLOWED_HOSTS = [".localhost", "127.0.0.1", ".run.app", ".vino9.net"]
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:8000",

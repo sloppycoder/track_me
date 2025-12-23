@@ -1,5 +1,6 @@
 # ruff: noqa: F405 F403
 import logging
+from pathlib import Path
 
 from track_me.settings import *
 
@@ -10,6 +11,10 @@ DATABASES = {
         "NAME": ":memory:",
     }
 }
+
+# Point to test photos directory
+TEST_DIR = Path(__file__).parent
+PHOTOS_BASE_DIR = str(TEST_DIR / "test_photos")
 
 # Test-specific settings
 DEBUG = False

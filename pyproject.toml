@@ -7,6 +7,7 @@ readme = "README.md"
 
 requires-python = ">= 3.12"
 dependencies = [
+    "dateparser>=1.2.2",
     "dj-database-url>=3.0.1",
     "django>=5.2",
     "django-tailwind-cli>=4.4.2",
@@ -30,7 +31,6 @@ dev = [
     "pytest-dotenv >= 0.5.2",
     "pytest-mock >= 3.14",
     "pytest-cov >= 6.1",
-    "pytest-asyncio>=0.25.3",
     "pre-commit >= 4.0.1",
     "ruff >= 0.12.10",
     "pyright >= 1.1.405",
@@ -38,6 +38,8 @@ dev = [
     "django-stubs>=5.2",
     "playwright>=1.55.0",
     "ty>=0.0.5",
+    "pytest-playwright>=0.7.2",
+    "pytest-asyncio>=1.3.0",
 ]
 
 [tool.uv]
@@ -47,12 +49,12 @@ managed = true
 minversion = "6.0"
 testpaths = ["tests"]
 pythonpath = ["."]
-DJANGO_SETTINGS_MODULE = "track_me.settings"
+DJANGO_SETTINGS_MODULE = "tests.settings"
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
 env_files = [".env"]
-asyncio_mode = "auto"
+asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]

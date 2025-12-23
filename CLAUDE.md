@@ -64,6 +64,85 @@ pyright
 
 **Never skip the ruff auto-fix step** - it's configured to handle most formatting issues automatically, including line length violations, import sorting, and spacing issues.
 
+## Development Server
+
+**IMPORTANT**: Before starting the Django development server, ALWAYS compile Tailwind CSS:
+
+1. **Compile Tailwind CSS** (required before running server):
+   ```bash
+   python manage.py tailwind build
+   ```
+
+2. **Start development server with Tailwind watch mode**:
+   ```bash
+   python manage.py tailwind runserver
+   ```
+
+   This command automatically:
+   - Compiles Tailwind CSS
+   - Watches for CSS changes
+   - Starts Django development server
+
+**Never start the server without compiling Tailwind CSS first** - the UI will be broken without the compiled CSS file.
+
+## Testing
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_photo_processing.py
+
+# Run with verbose output
+pytest -v
+
+# Run with coverage
+pytest --cov
+```
+
+### Playwright UI Tests
+
+The project includes Playwright-based UI tests for the photo grid interface. These tests:
+- Only run on macOS (skipped on other platforms for CI compatibility)
+- Use Django's `live_server` fixture with test database
+- Auto-populate test database with photos from `tests/test_photos/` directory
+- Require `DJANGO_ALLOW_ASYNC_UNSAFE=true` for Playwright/Django compatibility
+
+**Test Configuration:**
+- **Test database**: SQLite in-memory (configured in `tests/settings.py`)
+- **Test photos**: Placed in `tests/test_photos/` directory
+- **Photos base directory**: Automatically set to `tests/test_photos/` in test settings
+- **Fixture chain**: `processed_photos` (function-scoped) → `live_server` → `page_with_photos` → tests
+
+**Running UI tests:**
+```bash
+# Run all UI tests
+pytest tests/test_photo_grid_ui.py -v
+
+# Run specific UI test
+pytest tests/test_photo_grid_ui.py::test_photo_grid_display -v
+
+# Run with headed browser (see browser window)
+pytest tests/test_photo_grid_ui.py --headed
+```
+
+**UI Test Coverage:**
+- Photo grid displays multiple photos per row (responsive grid)
+- Photo selection updates map view
+- Double-clicking photo opens modal with preview
+- Complete workflow integration
+
+**Important Notes:**
+- Tests automatically skip on non-macOS platforms
+- `processed_photos` fixture runs for each test function to populate test database
+- Uses SQLite in-memory database for speed (no PostgreSQL required for tests)
+- Test photos are automatically found in `tests/test_photos/` directory
+- Playwright browsers installed via: `playwright install chromium`
+- All 4 UI tests verify photo grid, selection, modal, and complete workflow
+
 ## Git Commit Guidelines
 
 **IMPORTANT**: When committing code changes, ALWAYS include a summary of the changes in the commit message. Use the following format:
