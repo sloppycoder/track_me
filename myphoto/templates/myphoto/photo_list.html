@@ -3,6 +3,7 @@
 {% block title %}Photo Location Editor - Track Me{% endblock %}
 
 {% block content %}
+{% csrf_token %}
 <div class="flex h-screen overflow-hidden">
   <!-- Main Content (2/3 width) -->
   <div class="w-2/3 flex flex-col">

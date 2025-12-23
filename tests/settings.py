@@ -22,10 +22,6 @@ PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",  # Fast hasher for tests
 ]
 
-# Disable CSRF for Playwright UI tests
-# CSRF protection interferes with Playwright tests using live_server
-MIDDLEWARE = [m for m in MIDDLEWARE if "CsrfViewMiddleware" not in m]
-
 # Disable logging during tests to reduce noise
 LOGGING_CONFIG = None
 
