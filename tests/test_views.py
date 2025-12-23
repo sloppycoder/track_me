@@ -217,7 +217,7 @@ class TestApiUpdateLocation:
             # Mock the geocoding service
             mock_service = MagicMock()
             mock_service._geocode_coordinates.return_value = {
-                "location": "Tokyo, Japan",
+                "formatted_address": "Tokyo, Japan",
                 "country_code": "JP",
             }
             mock_service_class.return_value = mock_service

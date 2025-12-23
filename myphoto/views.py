@@ -399,7 +399,7 @@ def api_update_location(request):
             # Update all photos with location info
             if location_info:
                 for photo in photos:
-                    photo.location = location_info.get("location", "")
+                    photo.location = location_info.get("formatted_address", "")
                     photo.country_code = location_info.get("country_code", "")
                     photo.geo_coded_at = timezone.now()
                     photo.save()
@@ -408,7 +408,7 @@ def api_update_location(request):
                     {
                         "success": True,
                         "count": len(photos),
-                        "location": location_info.get("location", ""),
+                        "location": location_info.get("formatted_address", ""),
                         "country_code": location_info.get("country_code", ""),
                     }
                 )
