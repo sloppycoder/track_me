@@ -205,8 +205,8 @@ class GeocodingService:
             dict with location info or None if failed
         """
         try:
-            # Call reverse geocoding API
-            results = self.gmaps.reverse_geocode((lat, lon))  # type: ignore[attr-defined]
+            # Call reverse geocoding API with English language
+            results = self.gmaps.reverse_geocode((lat, lon), language="en")  # type: ignore[attr-defined]
 
             if not results or not isinstance(results, list) or len(results) == 0:
                 logger.warning(
@@ -233,7 +233,7 @@ class GeocodingService:
                     location_data["country_code"] = component.get("short_name", "")
                     break
 
-            # Get timezone
+            # Get timezone (language parameter not needed for timezone)
             try:
                 timezone_result = self.gmaps.timezone((lat, lon))  # type: ignore[attr-defined]
                 if (
