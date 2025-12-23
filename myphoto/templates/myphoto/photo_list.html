@@ -480,16 +480,27 @@ async function handleAssignClick() {
       })
     });
 
+    // Check if response is OK before parsing JSON
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Server error response:', response.status, text.substring(0, 200));
+      throw new Error(`Server error (${response.status}): ${response.statusText}`);
+    }
+
     const result = await response.json();
 
     if (result.success) {
-      alert(`Successfully updated ${result.count} photo(s)\nLocation: ${result.location || 'N/A'}\nCountry: ${result.country_code || 'N/A'}`);
+      const message = result.warning
+        ? `${result.warning}\n${result.count} photo(s) updated`
+        : `Successfully updated ${result.count} photo(s)\nLocation: ${result.location || 'N/A'}\nCountry: ${result.country_code || 'N/A'}`;
+      alert(message);
       // Refresh search to get updated data
       searchPhotos();
     } else {
       alert(`Error: ${result.error || 'Unknown error'}`);
     }
   } catch (error) {
+    console.error('Assignment error:', error);
     alert('Update failed: ' + error.message);
   } finally {
     btn.disabled = false;

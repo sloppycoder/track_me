@@ -13,7 +13,7 @@ ruff check .
 # Run linting with auto-fix
 ruff check . --fix
 
-# Format specific file (recommended after editing)
+# Format specific Python file (recommended after editing)
 ruff format <filename.py>
 
 # Format all Python files
@@ -23,16 +23,20 @@ ruff format .
 pyright
 ```
 
+**IMPORTANT**: Only run ruff on Python files (.py). **DO NOT** run ruff on HTML, CSS, JavaScript, or template files.
+
 
 
 ## Claude Code Instructions
 
 **IMPORTANT**: When working on this project, Claude Code must ALWAYS follow these steps after making any code changes:
 
-1. **Format the modified file** after editing (prevents many linting issues):
+1. **Format the modified Python file** after editing (prevents many linting issues):
    ```bash
    ruff format <filename.py>
    ```
+
+   **Note**: Only format Python (.py) files. DO NOT run ruff format on HTML, CSS, JavaScript, or template files.
 
 2. **Run Ruff linting and auto-fix** after every code modification:
    ```bash

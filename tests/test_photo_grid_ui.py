@@ -214,3 +214,91 @@ def test_complete_workflow(page_with_photos: Page):
     page.wait_for_timeout(300)
 
     print("✓ Complete workflow test passed")
+
+
+def test_assign_location_workflow(page_with_photos: Page):
+    """
+    Test location assignment workflow: select photo, locate, and assign.
+
+    Reproduces user's workflow:
+    1. Select first photo
+    2. Enter "singapore river, singapore" in location input
+    3. Click Locate button (geocodes location)
+    4. Click Assign button (updates photo with GPS)
+    """
+    page = page_with_photos
+
+    # Step 1: Select first photo
+    photos = page.locator("[data-photo-id]")
+    first_photo = photos.first
+    first_photo.click()
+    page.wait_for_timeout(500)
+
+    # Verify selection
+    selection_text = page.locator("#selection-count").text_content()
+    assert selection_text is not None, "Selection count should have text"
+    assert "1 photo" in selection_text, "Should show 1 photo selected"
+    print("✓ First photo selected")
+
+    # Step 2: Enter location in search box
+    location_input = page.locator("#location-input")
+    location_input.fill("singapore river, singapore")
+    page.wait_for_timeout(500)
+    print("✓ Location entered: singapore river, singapore")
+
+    # Step 3: Click Locate button to geocode
+    locate_btn = page.locator("#locate-btn")
+    locate_btn.click()
+
+    # Wait for geocoding to complete
+    page.wait_for_timeout(2000)
+
+    # Check if button is re-enabled (geocoding complete)
+    assert not locate_btn.is_disabled(), "Locate button should be re-enabled"
+    print("✓ Location geocoded")
+
+    # Step 4: Click Assign button to save GPS to photo
+    assign_btn = page.locator("#assign-btn")
+
+    # Listen for console errors
+    console_messages = []
+    page.on("console", lambda msg: console_messages.append(msg.text))
+
+    # Listen for dialog (alert)
+    dialog_message = None
+
+    def handle_dialog(dialog):
+        nonlocal dialog_message
+        dialog_message = dialog.message
+        dialog.accept()
+
+    page.on("dialog", handle_dialog)
+
+    assign_btn.click()
+
+    # Wait for assignment to complete
+    page.wait_for_timeout(3000)
+
+    # Check if there was an alert
+    if dialog_message:
+        print(f"Alert message: {dialog_message}")
+        assert "Update failed" not in dialog_message, f"Assignment failed: {dialog_message}"
+        assert "Successfully updated" in dialog_message, "Should show success message"
+
+    # Check console for JavaScript errors (ignore 404 resource loading errors)
+    js_errors = [
+        msg
+        for msg in console_messages
+        if ("error" in msg.lower() or "failed" in msg.lower())
+        and "404" not in msg  # Ignore 404 resource errors
+        and "Failed to load resource" not in msg  # Ignore resource loading errors
+    ]
+
+    if js_errors:
+        print(f"JavaScript errors: {js_errors}")
+        for error in js_errors:
+            print(f"  - {error}")
+
+    assert len(js_errors) == 0, f"Should not have JavaScript errors, found: {js_errors}"
+
+    print("✓ Location assignment test passed")

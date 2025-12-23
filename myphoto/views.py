@@ -412,6 +412,18 @@ def api_update_location(request):
                         "country_code": location_info.get("country_code", ""),
                     }
                 )
+            else:
+                # Geocoding returned empty/None - save GPS only
+                for photo in photos:
+                    photo.save()
+
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "count": len(photos),
+                        "warning": "GPS updated but geocoding returned no location data",
+                    }
+                )
 
         except Exception as e:
             # Save GPS coordinates even if geocoding fails
