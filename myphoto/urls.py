@@ -1,3 +1,4 @@
+from django.shortcuts import redirect
 from django.urls import path
 
 from . import views
@@ -5,7 +6,8 @@ from . import views
 app_name = "myphoto"
 
 urlpatterns = [
-    path("", views.photo_list, name="photo_list"),
+    path("", lambda request: redirect("myphoto:photo_list"), name="home"),
+    path("geotag/", views.photo_list, name="photo_list"),
     path("api/search/", views.api_photo_search, name="api_search"),  # type: ignore[arg-type]
     path("api/thumbnail/<int:photo_id>/", views.api_thumbnail, name="thumbnail"),  # type: ignore[arg-type]
     path("api/preview/<int:photo_id>/", views.api_photo_preview, name="photo_preview"),  # type: ignore[arg-type]

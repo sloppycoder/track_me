@@ -162,15 +162,17 @@ def test_double_click_opens_modal(page_with_photos: Page):
     assert f"/api/preview/{photo_id}/" in img_src, f"Expected preview endpoint, got {img_src}"
     print(f"✓ Modal using preview endpoint: {img_src}")
 
-    # Verify location source badge exists
-    modal_badge = page.locator("#modal-manual")
-    badge_text = modal_badge.text_content()
-    assert badge_text in [
-        "Manual",
-        "Auto-geocoded",
-        "Unknown",
-    ], f"Unexpected badge text: {badge_text}"
-    print(f"✓ Location source badge: {badge_text}")
+    # Verify location source element exists (may be hidden)
+    modal_location_source = page.locator("#modal-location-source")
+    # Element should exist but may be hidden
+    assert modal_location_source.count() == 1, "Location source element should exist"
+    # If visible, should show "Manual"
+    if modal_location_source.is_visible():
+        badge_text = modal_location_source.text_content()
+        assert badge_text == "Manual", f"Expected 'Manual', got: {badge_text}"
+        print(f"✓ Location source: {badge_text}")
+    else:
+        print("✓ Location source hidden (not manually assigned)")
 
     # Close the modal
     close_btn = page.locator('button:has-text("Close")')
