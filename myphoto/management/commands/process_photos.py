@@ -1,4 +1,5 @@
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 
 from myphoto.services.photo_processing_service import PhotoProcessingService
 
@@ -12,8 +13,12 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "directory",
+            nargs="?",
             type=str,
-            help="Top-level directory containing photo files",
+            help=(
+                "Top-level directory containing photo files "
+                "(defaults to PHOTOS_BASE_DIR from settings)"
+            ),
         )
         parser.add_argument(
             "--force-reprocess",
@@ -24,6 +29,16 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         directory = options["directory"]
         force_reprocess = options["force_reprocess"]
+
+        # If directory not provided, use PHOTOS_BASE_DIR from settings
+        if not directory:
+            directory = settings.PHOTOS_BASE_DIR
+            if not directory:
+                raise CommandError(
+                    "No directory specified. Either provide a directory argument "
+                    "or set PHOTOS_BASE_DIR in settings/environment."
+                )
+            self.stdout.write(f"Using PHOTOS_BASE_DIR from settings: {directory}")
 
         self.stdout.write(f"Processing photos from: {directory}")
         if force_reprocess:
