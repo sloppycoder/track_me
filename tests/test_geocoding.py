@@ -89,9 +89,9 @@ class TestGeocodingService:
         print(f"Timezone ID: {timezone_response.get('timeZoneId')}")
         print(f"Timezone Name: {timezone_response.get('timeZoneName')}")
 
-        # Now run the geocoding service with h3_resolution=12
-        # Resolution 12 = ~0.3km² hexagon
-        stats = geocoding_service.geocode_photos(h3_resolution=12, recalculate=False)
+        # Now run the geocoding service with h3_resolution=10
+        # Resolution 10 = ~15,000 m² hexagon
+        stats = geocoding_service.geocode_photos(h3_resolution=10, recalculate=False)
 
         # Verify geocoding happened
         assert stats["total_photos"] == 1

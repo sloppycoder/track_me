@@ -85,40 +85,40 @@ class Photo(models.Model):
     )
 
     # H3 spatial indexes for hierarchical visualization
-    h3_res_15 = models.CharField(
+    h3_res_11 = models.CharField(
         max_length=15,
         null=True,
         blank=True,
         db_index=True,
-        help_text="H3 resolution 15 (~0.9m²) - street level",
+        help_text="H3 resolution 11 (~2,150 m²) - street/block level",
     )
-    h3_res_12 = models.CharField(
+    h3_res_10 = models.CharField(
         max_length=15,
         null=True,
         blank=True,
         db_index=True,
-        help_text="H3 resolution 12 (~0.3km²) - neighborhood level",
+        help_text="H3 resolution 10 (~15,000 m²) - sub-neighborhood level",
     )
     h3_res_9 = models.CharField(
         max_length=15,
         null=True,
         blank=True,
         db_index=True,
-        help_text="H3 resolution 9 (~11km²) - city level",
+        help_text="H3 resolution 9 (~105,000 m²) - neighborhood level",
     )
     h3_res_6 = models.CharField(
         max_length=15,
         null=True,
         blank=True,
         db_index=True,
-        help_text="H3 resolution 6 (~290km²) - region level",
+        help_text="H3 resolution 6 (~36 km²) - metropolitan area level",
     )
     h3_res_3 = models.CharField(
         max_length=15,
         null=True,
         blank=True,
         db_index=True,
-        help_text="H3 resolution 3 (~12,000km²) - country level",
+        help_text="H3 resolution 3 (~12,400 km²) - multi-state region level",
     )
 
     # Perceptual hashes for duplicate detection (works across resolutions)
@@ -209,8 +209,8 @@ class Photo(models.Model):
         lon = float(self.gps_longitude)
 
         # Calculate H3 indexes at different resolutions
-        self.h3_res_15 = h3.latlng_to_cell(lat, lon, 15)
-        self.h3_res_12 = h3.latlng_to_cell(lat, lon, 12)
+        self.h3_res_11 = h3.latlng_to_cell(lat, lon, 11)
+        self.h3_res_10 = h3.latlng_to_cell(lat, lon, 10)
         self.h3_res_9 = h3.latlng_to_cell(lat, lon, 9)
         self.h3_res_6 = h3.latlng_to_cell(lat, lon, 6)
         self.h3_res_3 = h3.latlng_to_cell(lat, lon, 3)

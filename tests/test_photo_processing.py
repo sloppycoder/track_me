@@ -131,8 +131,8 @@ class TestPhotoProcessingService:
         assert photo.h3_res_3 is not None
         assert photo.h3_res_6 is not None
         assert photo.h3_res_9 is not None
-        assert photo.h3_res_12 is not None
-        assert photo.h3_res_15 is not None
+        assert photo.h3_res_10 is not None
+        assert photo.h3_res_11 is not None
 
         # Verify perceptual hash
         assert photo.perceptual_hash is not None
@@ -165,8 +165,8 @@ class TestPhotoProcessingService:
         assert photo.h3_res_3 is None
         assert photo.h3_res_6 is None
         assert photo.h3_res_9 is None
-        assert photo.h3_res_12 is None
-        assert photo.h3_res_15 is None
+        assert photo.h3_res_10 is None
+        assert photo.h3_res_11 is None
 
         # Verify camera info in EXIF metadata
         assert photo.exif_meta is not None
@@ -216,7 +216,7 @@ class TestPhotoProcessingService:
 
             # Check H3 indexes
             assert photo.h3_res_3 is not None
-            assert photo.h3_res_12 is not None
+            assert photo.h3_res_10 is not None
 
             # Check perceptual hash
             assert photo.perceptual_hash is not None
@@ -252,7 +252,7 @@ class TestPhotoProcessingService:
             photo = Photo.objects.get(file_name=photo_name)
             assert photo.gps_latitude is not None
             assert photo.gps_longitude is not None
-            assert photo.h3_res_12 is not None
+            assert photo.h3_res_10 is not None
 
         # Verify photos without GPS
         for photo_rel_path in ["2006/12/IMG_0243.JPG", "2015/01/IMG_4725.PNG"]:
@@ -260,7 +260,7 @@ class TestPhotoProcessingService:
             photo = Photo.objects.get(file_name=photo_name)
             assert photo.gps_latitude is None
             assert photo.gps_longitude is None
-            assert photo.h3_res_12 is None
+            assert photo.h3_res_10 is None
 
     def test_process_single_photo_skip_existing(self):
         """Test that processing skips already-processed photos."""
@@ -381,16 +381,16 @@ class TestPhotoProcessingService:
         assert photo.h3_res_3 is not None
         assert photo.h3_res_6 is not None
         assert photo.h3_res_9 is not None
-        assert photo.h3_res_12 is not None
-        assert photo.h3_res_15 is not None
+        assert photo.h3_res_10 is not None
+        assert photo.h3_res_11 is not None
 
         # Different resolutions should give different cell IDs
         h3_values = [
             photo.h3_res_3,
             photo.h3_res_6,
             photo.h3_res_9,
-            photo.h3_res_12,
-            photo.h3_res_15,
+            photo.h3_res_10,
+            photo.h3_res_11,
         ]
         assert len(set(h3_values)) == 5  # All unique
 
@@ -445,7 +445,7 @@ class TestPhotoProcessingService:
         # Verify NO GPS coordinates
         assert photo.gps_latitude is None
         assert photo.gps_longitude is None
-        assert photo.h3_res_12 is None
+        assert photo.h3_res_10 is None
 
         # Verify EXIF metadata was extracted
         assert photo.exif_meta is not None
@@ -495,8 +495,8 @@ class TestPhotoProcessingService:
         assert photo.h3_res_3 is not None
         assert photo.h3_res_6 is not None
         assert photo.h3_res_9 is not None
-        assert photo.h3_res_12 is not None
-        assert photo.h3_res_15 is not None
+        assert photo.h3_res_10 is not None
+        assert photo.h3_res_11 is not None
 
         # Verify perceptual hash
         assert photo.perceptual_hash is not None

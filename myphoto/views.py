@@ -384,10 +384,11 @@ def api_update_location(request):
         if not photos.exists():
             return JsonResponse({"success": False, "error": "No valid photos found"}, status=404)
 
-        # Update GPS coordinates and set manual flag
+        # Update GPS coordinates, recalculate H3 indexes, and set manual flag
         for photo in photos:
             photo.gps_latitude = Decimal(str(lat))
             photo.gps_longitude = Decimal(str(lng))
+            photo.calculate_h3_indexes()
             photo.is_location_manual = True
 
         # Reverse geocode to get location and country code

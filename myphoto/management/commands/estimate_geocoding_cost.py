@@ -33,11 +33,11 @@ class Command(BaseCommand):
 
         # Check different H3 resolutions
         resolutions = [
-            (3, "~12,000 km²", "Country level"),
-            (6, "~290 km²", "Region level"),
-            (9, "~11 km²", "City/neighborhood level"),
-            (12, "~0.3 km²", "Street level"),
-            (15, "~0.9 m²", "Building level"),
+            (3, "~12,400 km²", "Multi-state region level"),
+            (6, "~36 km²", "Metropolitan area level"),
+            (9, "~105,000 m²", "Neighborhood level"),
+            (10, "~15,000 m²", "Sub-neighborhood level"),
+            (11, "~2,150 m²", "Street/block level"),
         ]
 
         for res, area, description in resolutions:
@@ -74,7 +74,8 @@ class Command(BaseCommand):
 
         self.stdout.write("\n" + "=" * 70)
         self.stdout.write("\nRecommendation:")
-        self.stdout.write("  - Resolution 12 gives street-level precision")
+        self.stdout.write("  - Resolution 10 (~15k m²) is recommended for most use cases")
+        self.stdout.write("  - Resolution 11 (~2k m²) gives street/block-level precision")
         self.stdout.write(
             "  - Free tier: 10,000 API calls/month (covers both Geocoding + Timezone)"
         )

@@ -249,6 +249,13 @@ class TestApiUpdateLocation:
             assert sample_photo.location == "Tokyo, Japan"
             assert sample_photo.country_code == "JP"
 
+            # Verify H3 indexes were recalculated
+            assert sample_photo.h3_res_3 is not None
+            assert sample_photo.h3_res_6 is not None
+            assert sample_photo.h3_res_9 is not None
+            assert sample_photo.h3_res_10 is not None
+            assert sample_photo.h3_res_11 is not None
+
     def test_update_location_validates_coordinates(self, client, sample_photo):
         """Test that invalid coordinates are rejected."""
         # Test latitude out of range

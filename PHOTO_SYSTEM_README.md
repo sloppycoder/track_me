@@ -10,7 +10,7 @@ python manage.py process_photos /path/to/photos
 python manage.py estimate_geocoding_cost
 
 # 3. Geocode photos (Location + Timezone)
-python manage.py geocode_photos --h3-resolution=12
+python manage.py geocode_photos --h3-resolution=10
 
 # 4. Validate against CSV (optional data integrity check)
 python manage.py validate_photos /path/to/export.csv
@@ -26,8 +26,8 @@ python manage.py process_photos /Volumes/PhotoArchive
 python manage.py estimate_geocoding_cost
 # → Shows you exactly how many API calls needed for each resolution
 
-# Step 3: Geocode (use resolution 12 if within free tier)
-python manage.py geocode_photos --h3-resolution=12
+# Step 3: Geocode (use resolution 10 for good balance)
+python manage.py geocode_photos --h3-resolution=10
 
 # Done! Your photos now have:
 # - EXIF metadata (JSON)
@@ -100,12 +100,12 @@ pytest -v
 ✅ **Cost optimization**: H3-based batching reduces API calls 50-100x
 ✅ **Incremental**: Safe to re-run, only processes new photos
 ✅ **Free tier friendly**: Estimate costs before geocoding
-✅ **Street-level precision**: Resolution 12 gives ~0.3km² accuracy
+✅ **Street-level precision**: Resolution 10 gives ~15,000 m² (~4 city blocks)
 
 ## Cost Example
 
-**10,000 photos with resolution 12:**
+**10,000 photos with resolution 10:**
 - Without H3 grouping: 20,000 API calls (~$100)
-- With H3 grouping: ~1,000 API calls (~$5) ✓
+- With H3 grouping: ~500-800 API calls (~$2.50-$4) ✓
 
 Most photo collections fit within Google's $200/month free tier!

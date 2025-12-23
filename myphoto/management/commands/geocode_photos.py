@@ -10,8 +10,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--h3-resolution",
             type=int,
-            default=9,
-            help="H3 resolution for grouping (9=~11km², 12=~0.3km²) - default: 9",
+            default=10,
+            help="H3 resolution for grouping (9=~105k m², 10=~15k m², 11=~2k m²) - default: 10",
         )
         parser.add_argument(
             "--recalculate",

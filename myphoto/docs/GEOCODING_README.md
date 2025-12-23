@@ -69,13 +69,13 @@ python manage.py geocode_photos --api-key="your_api_key_here"
 ### Command Line
 
 ```bash
-# Geocode all photos (default H3 resolution 9 = ~11km²)
+# Geocode all photos (default H3 resolution 10 = ~15,000 m²)
 python manage.py geocode_photos
 
-# Use finer resolution (12 = ~0.3km² = more API calls but more precise)
-python manage.py geocode_photos --h3-resolution=12
+# Use finer resolution (11 = ~2,150 m² = more API calls but more precise)
+python manage.py geocode_photos --h3-resolution=11
 
-# Use coarser resolution (6 = ~290km² = fewer API calls but less precise)
+# Use coarser resolution (6 = ~36 km² = fewer API calls but less precise)
 python manage.py geocode_photos --h3-resolution=6
 
 # Force recalculate even if already geocoded
@@ -129,16 +129,17 @@ print(f"Processed: {stats['processed_photos']}, API calls: {stats['api_calls']}"
 Photos are grouped by H3 spatial index to minimize API calls:
 
 ```
-Resolution 6:  ~290 km²  → Very coarse, few API calls
-Resolution 9:  ~11 km²   → Recommended balance (default)
-Resolution 12: ~0.3 km²  → Fine-grained, more API calls
-Resolution 15: ~0.9 m²   → Very precise, many API calls
+Resolution 6:  ~36 km²      → Metropolitan area, few API calls
+Resolution 9:  ~105,000 m²  → Neighborhood level
+Resolution 10: ~15,000 m²   → Sub-neighborhood (default, recommended)
+Resolution 11: ~2,150 m²    → Street/block level, more API calls
 ```
 
 **Example**: If you have 1000 photos:
 - Without grouping: 1000 API calls
-- With H3 res 9: ~50-100 API calls (photos grouped by city/neighborhood)
-- With H3 res 6: ~10-20 API calls (photos grouped by region)
+- With H3 res 10: ~100-200 API calls (photos grouped by sub-neighborhood)
+- With H3 res 9: ~50-100 API calls (photos grouped by neighborhood)
+- With H3 res 6: ~10-20 API calls (photos grouped by metropolitan area)
 
 ### 2. Google Geocoding API Call
 
@@ -207,11 +208,12 @@ for photo in photos_in_h3_cell:
 | Photos | H3 Res | API Calls | Cost |
 |--------|--------|-----------|------|
 | 10,000 | 9      | ~200      | $2   |
-| 10,000 | 12     | ~500      | $5   |
+| 10,000 | 10     | ~400      | $4   |
+| 10,000 | 11     | ~600      | $6   |
 | 50,000 | 9      | ~1,000    | $10  |
 | 50,000 | 6      | ~100      | $1   |
 
-**Recommendation**: Start with H3 resolution 9 for the best balance.
+**Recommendation**: Start with H3 resolution 10 for the best balance between precision and cost.
 
 ## Database Schema
 
@@ -360,7 +362,7 @@ service = GeocodingService(google_api_key="your_key")
 
 # Fine resolution for city photos
 city_photos = Photo.objects.filter(h3_res_6='86283...')
-service.geocode_photos(h3_resolution=12, recalculate=False)
+service.geocode_photos(h3_resolution=11, recalculate=False)
 
 # Coarse resolution for rural photos
 rural_photos = Photo.objects.filter(country_code='US').exclude(h3_res_6='86283...')
