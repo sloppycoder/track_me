@@ -71,6 +71,18 @@
         />
       </div>
 
+      <div class="mb-4">
+        <label class="label">
+          <span class="label-text font-semibold">Date</span>
+        </label>
+        <input
+          id="date-input"
+          type="text"
+          placeholder="YYYY-MM-DD or YYYY-MM-DD to YYYY-MM-DD"
+          class="input input-bordered w-full"
+        />
+      </div>
+
       <div class="flex gap-2 mb-4">
         <button id="locate-btn" class="btn btn-secondary flex-1">Locate</button>
         <button id="assign-btn" class="btn btn-primary flex-1">Assign</button>
@@ -392,6 +404,7 @@ function updateMapFromSelection() {
 
   if (selectedPhotos.length === 0) {
     document.getElementById('location-input').value = '';
+    document.getElementById('date-input').value = '';
     return;
   }
 
@@ -405,6 +418,12 @@ function updateMapFromSelection() {
       document.getElementById('location-input').value = photo.location || '';
     } else {
       document.getElementById('location-input').value = 'No GPS data';
+    }
+    // Set date for single photo
+    if (photo.date_time_taken) {
+      document.getElementById('date-input').value = photo.date_time_taken.substring(0, 10);
+    } else {
+      document.getElementById('date-input').value = '';
     }
   } else {
     // Multiple photos
@@ -440,6 +459,24 @@ function updateMapFromSelection() {
       } else {
         document.getElementById('location-input').value = 'Various locations';
       }
+    }
+
+    // Set date range for multiple photos
+    const dates = selectedPhotos
+      .filter(p => p.date_time_taken)
+      .map(p => p.date_time_taken.substring(0, 10))
+      .sort();
+
+    if (dates.length > 0) {
+      const minDate = dates[0];
+      const maxDate = dates[dates.length - 1];
+      if (minDate === maxDate) {
+        document.getElementById('date-input').value = minDate;
+      } else {
+        document.getElementById('date-input').value = `${minDate} to ${maxDate}`;
+      }
+    } else {
+      document.getElementById('date-input').value = '';
     }
   }
 }
@@ -510,22 +547,59 @@ async function handleAssignClick() {
   const lat = position.lat();
   const lng = position.lng();
 
+  // Get and validate date input
+  const dateInput = document.getElementById('date-input').value.trim();
+  let dateValue = null;
+
+  if (dateInput) {
+    // Validate date format (YYYY-MM-DD)
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateInput)) {
+      showToast('Invalid date format. Use YYYY-MM-DD (e.g., 2024-01-15)', 'error');
+      return;
+    }
+
+    // Validate date range (2000-01-01 to today)
+    const inputDate = new Date(dateInput);
+    const minDate = new Date('2000-01-01');
+    const today = new Date();
+    today.setHours(23, 59, 59, 999); // End of today
+
+    if (isNaN(inputDate.getTime())) {
+      showToast('Invalid date. Please enter a valid date.', 'error');
+      return;
+    }
+
+    if (inputDate < minDate || inputDate > today) {
+      showToast('Date must be between 2000-01-01 and today', 'error');
+      return;
+    }
+
+    dateValue = dateInput;
+  }
+
   const btn = document.getElementById('assign-btn');
   btn.disabled = true;
   btn.textContent = 'Assigning...';
 
   try {
+    const requestBody = {
+      photo_ids: selectedIds,
+      latitude: lat,
+      longitude: lng
+    };
+
+    if (dateValue) {
+      requestBody.date = dateValue;
+    }
+
     const response = await fetch('/api/update-location/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-CSRFToken': getCookie('csrftoken')
       },
-      body: JSON.stringify({
-        photo_ids: selectedIds,
-        latitude: lat,
-        longitude: lng
-      })
+      body: JSON.stringify(requestBody)
     });
 
     // Check if response is OK before parsing JSON

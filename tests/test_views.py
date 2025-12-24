@@ -304,6 +304,84 @@ class TestApiUpdateLocation:
         assert result["success"] is False
         assert "Invalid JSON" in result["error"]
 
+    def test_update_location_with_valid_date(self, client, sample_photo):
+        """Test updating location with a valid date."""
+        with patch("myphoto.views.GeocodingService") as mock_service_class:
+            # Mock the geocoding service
+            mock_service = MagicMock()
+            mock_service._geocode_coordinates.return_value = {
+                "formatted_address": "Tokyo, Japan",
+                "country_code": "JP",
+            }
+            mock_service_class.return_value = mock_service
+
+            data = {
+                "photo_ids": [sample_photo.id],  # type: ignore[attr-defined]
+                "latitude": 35.6762,
+                "longitude": 139.6503,
+                "date": "2024-01-15",
+            }
+
+            response = client.post(
+                reverse("myphoto:api_update_location"),
+                data=json.dumps(data),
+                content_type="application/json",
+            )
+
+            assert response.status_code == 200
+            result = response.json()
+            assert result["success"] is True
+
+            # Check that date was updated
+            sample_photo.refresh_from_db()
+            assert sample_photo.date_time_taken is not None
+            # Check date in local timezone (date field uses local timezone)
+            from django.utils import timezone as tz
+
+            local_date = tz.localtime(sample_photo.date_time_taken).date()
+            assert local_date.isoformat() == "2024-01-15"
+
+    def test_update_location_validates_date_format(self, client, sample_photo):
+        """Test that invalid date format is rejected."""
+        data = {
+            "photo_ids": [sample_photo.id],  # type: ignore[attr-defined]
+            "latitude": 35.6762,
+            "longitude": 139.6503,
+            "date": "invalid-date",
+        }
+
+        response = client.post(
+            reverse("myphoto:api_update_location"),
+            data=json.dumps(data),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        result = response.json()
+        assert result["success"] is False
+        assert "Invalid date format" in result["error"]
+
+    def test_update_location_validates_date_range(self, client, sample_photo):
+        """Test that date out of valid range is rejected."""
+        # Test date before 2000
+        data = {
+            "photo_ids": [sample_photo.id],  # type: ignore[attr-defined]
+            "latitude": 35.6762,
+            "longitude": 139.6503,
+            "date": "1999-12-31",
+        }
+
+        response = client.post(
+            reverse("myphoto:api_update_location"),
+            data=json.dumps(data),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        result = response.json()
+        assert result["success"] is False
+        assert "Date must be between 2000-01-01 and today" in result["error"]
+
 
 class TestApiReverseGeocode:
     """Tests for the reverse geocoding API endpoint."""

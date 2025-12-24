@@ -346,18 +346,20 @@ def api_photo_preview(request, photo_id):
 @require_POST  # type: ignore[misc]
 def api_update_location(request):
     """
-    Update GPS coordinates for selected photos and reverse geocode.
+    Update GPS coordinates and optionally date for selected photos and reverse geocode.
 
     Request body (JSON):
         photo_ids: List of photo IDs
         latitude: GPS latitude
         longitude: GPS longitude
+        date: Optional date string in YYYY-MM-DD format
     """
     try:
         data = json.loads(request.body)
         photo_ids = data.get("photo_ids", [])
         latitude = data.get("latitude")
         longitude = data.get("longitude")
+        date_str = data.get("date")
 
         # Validate inputs
         if not photo_ids:
@@ -379,17 +381,43 @@ def api_update_location(request):
                 {"success": False, "error": f"Invalid coordinates: {e}"}, status=400
             )
 
+        # Validate date if provided
+        date_value = None
+        if date_str:
+            try:
+                date_value = datetime.strptime(date_str, "%Y-%m-%d")
+                # Validate date range (2000-01-01 to today)
+                min_date = datetime(2000, 1, 1)
+                max_date = datetime.now()
+                if date_value < min_date or date_value > max_date:
+                    return JsonResponse(
+                        {
+                            "success": False,
+                            "error": "Date must be between 2000-01-01 and today",
+                        },
+                        status=400,
+                    )
+                # Make timezone-aware
+                date_value = timezone.make_aware(date_value)
+            except ValueError:
+                return JsonResponse(
+                    {"success": False, "error": "Invalid date format. Use YYYY-MM-DD"},
+                    status=400,
+                )
+
         # Get photos
         photos = Photo.objects.filter(id__in=photo_ids)
         if not photos.exists():
             return JsonResponse({"success": False, "error": "No valid photos found"}, status=404)
 
-        # Update GPS coordinates, recalculate H3 indexes, and set manual flag
+        # Update GPS coordinates, date, recalculate H3 indexes, and set manual flag
         for photo in photos:
             photo.gps_latitude = Decimal(str(lat))
             photo.gps_longitude = Decimal(str(lng))
             photo.calculate_h3_indexes()
             photo.is_location_manual = True
+            if date_value:
+                photo.date_time_taken = date_value
 
         # Reverse geocode to get location and country code
         geocoding_service = GeocodingService(google_api_key=settings.GOOGLE_MAPS_API_KEY)
