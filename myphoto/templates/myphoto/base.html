@@ -17,6 +17,9 @@
                         <a href="{% url 'myphoto:photo_list' %}" class="text-gray-700 hover:text-primary px-3 py-2 rounded-md text-sm font-medium {% if request.resolver_match.url_name == 'photo_list' %}bg-gray-100 text-primary{% endif %}">
                             Geo Tag
                         </a>
+                        <a href="{% url 'myphoto:footprints' %}" class="text-gray-700 hover:text-primary px-3 py-2 rounded-md text-sm font-medium {% if request.resolver_match.url_name == 'footprints' %}bg-gray-100 text-primary{% endif %}">
+                            Footprints
+                        </a>
                     </div>
                 </div>
             </div>

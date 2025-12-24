@@ -473,3 +473,176 @@ def api_reverse_geocode(request):
     except Exception as e:
         logger.error(f"Reverse geocoding error: {e}")
         return JsonResponse({"error": str(e)}, status=500)
+
+
+def footprints_view(request):
+    """Footprints timeline visualization page."""
+    return render(
+        request,
+        "myphoto/footprints.html",
+        {
+            "api_key": settings.GOOGLE_MAPS_API_KEY,
+            "max_steps": settings.MAX_FOOTPRINT_STEPS,
+            "min_steps": settings.MIN_FOOTPRINT_STEPS,
+        },
+    )
+
+
+@require_GET  # type: ignore[misc]
+def api_footprints_steps(request):
+    """
+    API endpoint to get footprints timeline steps with smart H3 clustering.
+
+    Query params:
+        date_range: Date range string (e.g., "2024", "2024-01", "2024-01 to 2024-12")
+
+    Returns JSON with timeline steps, each representing a geographic cluster.
+    """
+    import h3
+    from django.db.models import Min
+
+    date_range_str = request.GET.get("date_range", "").strip()
+
+    if not date_range_str:
+        return JsonResponse({"error": "date_range parameter required"}, status=400)
+
+    # Parse date range using existing smart search parser
+    search_params = parse_smart_search(date_range_str)
+
+    # Extract date range
+    if search_params["search_type"] in ["date", "date_range"]:
+        date_from = search_params["date_from"]
+        date_to = search_params["date_to"]
+    else:
+        return JsonResponse(
+            {
+                "error": (
+                    "Invalid date range format. Examples: '2024', '2024-01', '2024-01 to 2024-12'"
+                )
+            },
+            status=400,
+        )
+
+    if not date_from or not date_to:
+        return JsonResponse({"error": "Could not parse date range"}, status=400)
+
+    # Query photos with GPS in date range
+    photos = Photo.objects.filter(
+        date_time_taken__gte=date_from,
+        date_time_taken__lte=date_to,
+        gps_latitude__isnull=False,
+        gps_longitude__isnull=False,
+    )
+
+    if not photos.exists():
+        return JsonResponse(
+            {
+                "steps": [],
+                "total_steps": 0,
+                "message": "No photos with GPS found in this date range",
+            }
+        )
+
+    # Determine initial H3 resolution based on timeline span
+    span_days = (date_to - date_from).days
+
+    if span_days >= 365:  # 1+ years
+        initial_res = 6
+    elif span_days >= 30:  # 1-12 months
+        initial_res = 9
+    else:  # <1 month
+        initial_res = 10
+
+    # Available resolutions in order
+    resolutions = [3, 6, 9, 10, 11]
+    current_res_idx = resolutions.index(initial_res)
+
+    # Find optimal resolution with cluster count in desired range
+    resolution = initial_res
+    cluster_count = 0
+
+    for _ in range(len(resolutions)):
+        resolution = resolutions[current_res_idx]
+        h3_field = f"h3_res_{resolution}"
+
+        # Count unique H3 clusters at this resolution
+        cluster_count = photos.values(h3_field).distinct().count()
+
+        # Check if we need to adjust
+        if (
+            cluster_count < settings.MIN_FOOTPRINT_STEPS
+            and current_res_idx < len(resolutions) - 1
+        ):
+            # Too few clusters, increase resolution (more granular)
+            current_res_idx += 1
+            continue
+        elif cluster_count > settings.MAX_FOOTPRINT_STEPS and current_res_idx > 0:
+            # Too many clusters, decrease resolution (less granular)
+            current_res_idx -= 1
+            continue
+        else:
+            # Just right or can't adjust further
+            break
+
+    # Get earliest photo per H3 cluster
+    h3_field = f"h3_res_{resolution}"
+    clusters = (
+        photos.values(h3_field)
+        .annotate(earliest_date=Min("date_time_taken"))
+        .order_by("earliest_date")
+    )
+
+    # Build steps array
+    steps = []
+    for idx, cluster in enumerate(clusters):
+        h3_cell = cluster[h3_field]
+        if not h3_cell:
+            continue
+
+        # Get the actual earliest photo in this cluster
+        photo = (
+            photos.filter(**{h3_field: h3_cell}, date_time_taken=cluster["earliest_date"])
+            .order_by("date_time_taken")
+            .first()
+        )
+
+        if not photo:
+            continue
+
+        # Get H3 cluster center coordinates
+        try:
+            center_lat, center_lng = h3.cell_to_latlng(h3_cell)
+        except Exception as e:
+            logger.error(f"Error getting H3 center for {h3_cell}: {e}")
+            continue
+
+        # Count photos in this cluster
+        photo_count = photos.filter(**{h3_field: h3_cell}).count()
+
+        steps.append(
+            {
+                "step_number": idx + 1,
+                "h3_cell": h3_cell,
+                "resolution": resolution,
+                "photo_id": photo.id,  # type: ignore[attr-defined]
+                "file_name": photo.file_name,
+                "thumbnail_url": f"/api/thumbnail/{photo.id}/",  # type: ignore[attr-defined]
+                "date_time_taken": (
+                    photo.date_time_taken.isoformat() if photo.date_time_taken else None
+                ),
+                "location": photo.location or "",
+                "country_code": photo.country_code or "",
+                "center_lat": center_lat,
+                "center_lng": center_lng,
+                "photo_count": photo_count,
+            }
+        )
+
+    return JsonResponse(
+        {
+            "steps": steps,
+            "total_steps": len(steps),
+            "resolution_used": resolution,
+            "total_photos": photos.count(),
+        }
+    )

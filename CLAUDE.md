@@ -171,3 +171,52 @@ EOF
 **Always include a summary section** that explains:
 - What functionality was added/changed/removed
 - The reason for the changes (if not obvious)
+
+## Features
+
+### Geo Tag Feature
+Location: `/geotag/`
+
+The Geo Tag feature allows users to assign GPS coordinates and location information to photos:
+- Smart search with date ranges, locations, and country codes
+- Photo grid with multi-select (click, Ctrl+click, Shift+click)
+- Google Maps integration for location selection
+- Manual GPS coordinate assignment
+- Automatic reverse geocoding to get location names
+- Photo detail modal with preview
+
+### Footprints Feature
+Location: `/footprints/`
+
+The Footprints feature visualizes geographic journeys from photos on a timeline:
+
+**Key Functionality:**
+- Date range search (year, month, or custom ranges like "2024-01 to 2024-06")
+- Smart H3-based clustering to group photos by geographic location
+- Displays 1 representative photo per location cluster
+- Interactive Google Maps with numbered PINs for each step
+- Horizontal scrolling photo timeline showing chronological journey
+- Bidirectional selection: click photo → highlight PIN, click PIN → select photo
+
+**Smart H3 Resolution Selection:**
+The feature automatically selects optimal H3 resolution based on:
+- Timeline span (1+ year → res 6, 1-12 months → res 9, <1 month → res 10)
+- Cluster count (adjusts to keep steps between 3-20, configurable via settings)
+- Ensures visualization shows meaningful geographic groupings
+
+**Configuration (settings.py):**
+```python
+MAX_FOOTPRINT_STEPS = 20  # Maximum location steps to display
+MIN_FOOTPRINT_STEPS = 3   # Minimum steps before increasing resolution
+```
+
+**API Endpoint:**
+- `GET /api/footprints/steps/?date_range=<range>` - Returns timeline steps with photos
+- Response includes: steps array, resolution used, total photos count
+- Each step contains: photo info, H3 cluster center coordinates, photo count in cluster
+
+**Implementation Details:**
+- Uses existing H3 indexes (res 3, 6, 9, 10, 11) stored in Photo model
+- Selects earliest photo chronologically for each cluster
+- Auto-zoom map to fit all markers
+- Reuses thumbnail caching infrastructure from Geo Tag feature

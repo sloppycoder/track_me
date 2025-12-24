@@ -19,7 +19,11 @@ THUMBNAIL_SIZE = (
     int(os.getenv("THUMBNAIL_HEIGHT", "200")),
 )
 MAX_PHOTOS_PER_PAGE = int(os.getenv("MAX_PHOTOS_PER_PAGE", "200"))
-PHOTOS_BASE_DIR = os.getenv("PHOTOS_BASE_DIR", "")
+PHOTOS_BASE_DIR = os.path.expanduser(os.getenv("PHOTOS_BASE_DIR", "~/tmp"))
+
+# Footprints feature settings
+MAX_FOOTPRINT_STEPS = int(os.getenv("MAX_FOOTPRINT_STEPS", "20"))
+MIN_FOOTPRINT_STEPS = int(os.getenv("MIN_FOOTPRINT_STEPS", "3"))
 
 # Ensure thumbnail cache directory exists
 THUMBNAIL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
