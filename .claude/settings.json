@@ -1,26 +1,76 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/scripts/init_remote_env.sh"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/scripts/permission_guard.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/scripts/format_on_save.py"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
+      "WebSearch",
+      "WebFetch(domain:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:*.githubusercontent.com)",
+      "Read(/tmp/claude/*)",
+      "Bash(ls:*)",
+      "Bash(chmod:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(tree:*)",
+      "Bash(rg:*)",
+      "Bash(rm:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(pytest:*)",
+      "Bash(ruff check:*)",
+      "Bash(ruff format:*)",
+      "Bash(ty check:*)",
       "Bash(uv add:*)",
       "Bash(uv sync:*)",
       "Bash(uv tree:*)",
-      "Bash(cp:*)",
-      "Bash(mv:*)",
-      "Bash(rm:*)",
-      "Bash(rg:*)",
-      "Bash(grep:*)",
-      "Bash(find:*)",
-      "Bash(python -m pytest -v:*)",
-      "Bash(python:*)",
-      "WebFetch(domain:*)",
-      "Bash(ruff check:*)",
-      "Bash(ruff format:*)",
-      "Bash(pytest:*)",
+      "Bash(uv run python:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run ty check:*)",
       "Bash(git add:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(git mv:*)",
+      "Bash(git worktree:*)",
+      "Bash(git commit:*)"
     ],
     "ask": [
-      "Bash(git commit:*)",
+      "Bash(pkill:*)",
       "Bash(git push:*)"
     ],
     "deny": [

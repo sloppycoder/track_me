@@ -1,5 +1,5 @@
 
-exclude: "^$|deploy|scripts|tmp"
+exclude: "^$|deploy|tmp|.claude|.vscode"
 fail_fast: false
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -12,7 +12,7 @@ repos:
       #   args: ["--print-changes"]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.10
+    rev: v0.14.10
     hooks:
       - id: ruff-check
         args: [--fix]
@@ -21,11 +21,11 @@ repos:
 
   - repo: local
     hooks:
-      - id: pyright
-        name: pyright
-        entry: bash -c 'uv run pyright .'
+      - id: deptry
+        name: deptry
+        entry: uv run deptry .
         language: system
-        types: [python]
+        always_run: true
         pass_filenames: false
 
       - id: ty

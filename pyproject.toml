@@ -32,12 +32,13 @@ dev = [
     "pytest-mock >= 3.14",
     "pytest-cov >= 6.1",
     "pre-commit >= 4.0.1",
-    "ruff >= 0.12.10",
+    "ruff >= 0.14.10",
     "pyright >= 1.1.405",
     "pytest-django>=4.11.1",
     "django-stubs>=5.2",
     "playwright>=1.55.0",
-    "ty>=0.0.5",
+    "ty>=0.0.14",
+    "deptry>=0.22",
     "pytest-playwright>=0.7.2",
     "pytest-asyncio>=1.3.0",
 ]
@@ -98,3 +99,12 @@ exclude = [
     "build/",
 ]
 pythonVersion = "3.12"
+
+[tool.deptry.per_rule_ignores]
+DEP002 = [
+    "django-tailwind-cli",
+    "gunicorn",
+    "psycopg",
+    "pyyaml",
+    "whitenoise",
+]
