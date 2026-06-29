@@ -1,222 +1,102 @@
 # Instructions for coding agents
 
+This project is being re-architected. See **REARCH_PLAN.md** (overall plan,
+Phases 0–4) and **docs/PHASE_3_UI_PLAN.md** (the UI, not yet built). The new code
+lives in the `library` and `places` apps; the legacy `myphoto` app still serves
+the old Geo Tag / Footprints UI but is **being replaced and removed in Phase 3** —
+do not build new features on it.
 
 ## Key Dependencies
 - Python 3.12+
-- UV package manager (uv.lock present)
+- UV package manager (`uv.lock` present) — use `uv sync`, `uv add`, `uv run`.
 
-### Code Quality
+## Code Quality
+
 ```bash
-# Run linting
-ruff check .
-
-# Run linting with auto-fix
-ruff check . --fix
-
-# Format specific Python file (recommended after editing)
-ruff format <filename.py>
-
-# Format all Python files
-ruff format .
-
-# Type checking
-pyright
+ruff check .            # lint
+ruff check . --fix      # lint + autofix
+ruff format <file.py>   # format a file (recommended after editing)
+ty check .              # type check (ty is the type checker; pyright is NOT used)
 ```
 
-**IMPORTANT**: Only run ruff on Python files (.py). **DO NOT** run ruff on HTML, CSS, JavaScript, or template files.
+**Only run ruff/ty on Python (.py) files. DO NOT run them on HTML, CSS, JS, or
+templates.**
 
+After any code change, run, in order:
+1. `ruff format <changed_file.py>`
+2. `ruff check . --fix`
+3. `ruff check .`
+4. `pytest`
+5. `ty check .`
 
+Project rules: line length **98**, indent **4 spaces**, imports at top of file,
+PEP8. Pre-commit runs ruff + ty (see `.pre-commit-config.yaml`).
 
-## Claude Code Instructions
+## Database
 
-**IMPORTANT**: When working on this project, Claude Code must ALWAYS follow these steps after making any code changes:
+Local-first **SQLite** at `data/track_me.db` (the `data/` dir holds the db and
+thumbnails; auto-created at startup, gitignored). Set `DATABASE_URL` to override
+with Postgres (e.g. Cloud Run). The fresh schema is re-derivable — recreate with
+`python manage.py migrate`.
 
-1. **Format the modified Python file** after editing (prevents many linting issues):
-   ```bash
-   ruff format <filename.py>
-   ```
+## Ingestion & geocoding pipeline (new)
 
-   **Note**: Only format Python (.py) files. DO NOT run ruff format on HTML, CSS, JavaScript, or template files.
+```bash
+# 1. Ingest a Google Takeout extract: parse sidecar JSON + EXIF, set taken_at for
+#    every item, resolve location, store the Google Photos URL, cache thumbnails.
+python manage.py ingest <takeout-dir>        # directory arg is REQUIRED
 
-2. **Run Ruff linting and auto-fix** after every code modification:
-   ```bash
-   ruff check . --fix
-   ```
+# 2. Reverse-geocode located items into place names (H3-batched, Google API).
+python manage.py geocode [--resolution 9] [--max-api-calls N] [--recalculate]
+```
 
+Both commands are re-runnable/incremental (dedupe by `MediaItem.dedupe_key`) and
+never overwrite manual edits. Key model: `library/models.py::MediaItem`
+(`taken_at`, `latitude/longitude`, single `h3_cell`, `location_source`,
+`time_source`, `google_photos_url`, `needs_review`, content-addressed thumbnails).
 
-3. **Check for remaining linting issues**:
-   ```bash
-   ruff check .
-   ```
+## API
 
-4. **Project-specific linting rules**:
-   - Line length limit: **90 characters** (configured in pyproject.toml)
-   - Indent width: **4 spaces**
-   - Always fix simple issues like line length, imports, spacing automatically
-   - Follow PEP8 standards and project conventions
-   - Import statements should ALWAYS be at the top of the file
-
-5. **After fixing linting issues, run tests** to ensure nothing is broken:
-   ```bash
-   pytest
-   ```
-
-6. **Type checking** (optional but recommended):
-   ```bash
-   pyright .
-   ```
-
-**Never skip the ruff auto-fix step** - it's configured to handle most formatting issues automatically, including line length violations, import sorting, and spacing issues.
+django-ninja, mounted at `/api` (auto docs at `/api/docs`); root in
+`track_me/api.py`. App routers are added as features land.
 
 ## Development Server
 
-**IMPORTANT**: Before starting the Django development server, ALWAYS compile Tailwind CSS:
+Always compile Tailwind CSS before serving (UI is broken without it):
 
-1. **Compile Tailwind CSS** (required before running server):
-   ```bash
-   python manage.py tailwind build
-   ```
-
-2. **Start development server with Tailwind watch mode**:
-   ```bash
-   python manage.py tailwind runserver
-   ```
-
-   This command automatically:
-   - Compiles Tailwind CSS
-   - Watches for CSS changes
-   - Starts Django development server
-
-**Never start the server without compiling Tailwind CSS first** - the UI will be broken without the compiled CSS file.
+```bash
+python manage.py tailwind build       # compile once
+python manage.py tailwind runserver   # compile + watch + runserver
+```
 
 ## Testing
 
-### Running Tests
-
 ```bash
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_photo_processing.py
-
-# Run with verbose output
-pytest -v
-
-# Run with coverage
-pytest --cov
+pytest                       # full suite (fast; SQLite in-memory)
+pytest tests/test_xxx.py -v  # one file
+pytest --cov                 # coverage
 ```
 
-### Playwright UI Tests
-
-The project includes Playwright-based UI tests for the photo grid interface. These tests:
-- Only run on macOS (skipped on other platforms for CI compatibility)
-- Use Django's `live_server` fixture with test database
-- Auto-populate test database with photos from `tests/test_photos/` directory
-- Require `DJANGO_ALLOW_ASYNC_UNSAFE=true` for Playwright/Django compatibility
-
-**Test Configuration:**
-- **Test database**: SQLite in-memory (configured in `tests/settings.py`)
-- **Test photos**: Placed in `tests/test_photos/` directory
-- **Photos base directory**: Automatically set to `tests/test_photos/` in test settings
-- **Fixture chain**: `processed_photos` (function-scoped) → `live_server` → `page_with_photos` → tests
-
-**Running UI tests:**
-```bash
-# Run all UI tests
-pytest tests/test_photo_grid_ui.py -v
-
-# Run specific UI test
-pytest tests/test_photo_grid_ui.py::test_photo_grid_display -v
-
-# Run with headed browser (see browser window)
-pytest tests/test_photo_grid_ui.py --headed
-```
-
-**UI Test Coverage:**
-- Photo grid displays multiple photos per row (responsive grid)
-- Photo selection updates map view
-- Double-clicking photo opens modal with preview
-- Complete workflow integration
-
-**Important Notes:**
-- Tests automatically skip on non-macOS platforms
-- `processed_photos` fixture runs for each test function to populate test database
-- Uses SQLite in-memory database for speed (no PostgreSQL required for tests)
-- Test photos are automatically found in `tests/test_photos/` directory
-- Playwright browsers installed via: `playwright install chromium`
-- All 4 UI tests verify photo grid, selection, modal, and complete workflow
+- Test settings: `tests/settings.py` (SQLite in-memory; WhiteNoise disabled).
+- Real-world sidecar fixtures live in `tests/fixtures/` (anonymized) — add new
+  Takeout quirks there as regression cases.
+- **Playwright UI tests** are gated to macOS: mark them `@pytest.mark.playwright`
+  and a `conftest.py` hook auto-skips them off macOS (CI / remote Linux). Install
+  browsers with `playwright install chromium`. (No UI tests exist yet — Phase 3.)
 
 ## Git Commit Guidelines
 
-**IMPORTANT**: When committing code changes, ALWAYS include a summary of the changes in the commit message. Use the following format:
+Always include a summary in the commit message:
 
 ```bash
 git commit -m "$(cat <<'EOF'
 Brief description of changes
 
-Summary of what was changed:
-- List specific changes made
-- Include any new features or fixes
-
+Summary of what changed:
+- specific change 1
+- specific change 2
 EOF
 )"
 ```
 
-**Examples of good commit messages:**
-- `Update citation system to use start_text/end_text format`
-- `Simplify locate_citations logic by removing complex fuzzy matching`
-- `Add support for portfolio manager extraction with improved prompts`
-
-**Always include a summary section** that explains:
-- What functionality was added/changed/removed
-- The reason for the changes (if not obvious)
-
-## Features
-
-### Geo Tag Feature
-Location: `/geotag/`
-
-The Geo Tag feature allows users to assign GPS coordinates and location information to photos:
-- Smart search with date ranges, locations, and country codes
-- Photo grid with multi-select (click, Ctrl+click, Shift+click)
-- Google Maps integration for location selection
-- Manual GPS coordinate assignment
-- Automatic reverse geocoding to get location names
-- Photo detail modal with preview
-
-### Footprints Feature
-Location: `/footprints/`
-
-The Footprints feature visualizes geographic journeys from photos on a timeline:
-
-**Key Functionality:**
-- Date range search (year, month, or custom ranges like "2024-01 to 2024-06")
-- Smart H3-based clustering to group photos by geographic location
-- Displays 1 representative photo per location cluster
-- Interactive Google Maps with numbered PINs for each step
-- Horizontal scrolling photo timeline showing chronological journey
-- Bidirectional selection: click photo → highlight PIN, click PIN → select photo
-
-**Smart H3 Resolution Selection:**
-The feature automatically selects optimal H3 resolution based on:
-- Timeline span (1+ year → res 6, 1-12 months → res 9, <1 month → res 10)
-- Cluster count (adjusts to keep steps between 3-20, configurable via settings)
-- Ensures visualization shows meaningful geographic groupings
-
-**Configuration (settings.py):**
-```python
-MAX_FOOTPRINT_STEPS = 20  # Maximum location steps to display
-MIN_FOOTPRINT_STEPS = 3   # Minimum steps before increasing resolution
-```
-
-**API Endpoint:**
-- `GET /api/footprints/steps/?date_range=<range>` - Returns timeline steps with photos
-- Response includes: steps array, resolution used, total photos count
-- Each step contains: photo info, H3 cluster center coordinates, photo count in cluster
-
-**Implementation Details:**
-- Uses existing H3 indexes (res 3, 6, 9, 10, 11) stored in Photo model
-- Selects earliest photo chronologically for each cluster
-- Auto-zoom map to fit all markers
-- Reuses thumbnail caching infrastructure from Geo Tag feature
+Explain what changed and why (if not obvious).

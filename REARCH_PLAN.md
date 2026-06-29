@@ -199,8 +199,9 @@ high `google_photos_url` coverage; delete the extract, thumbnails still load.
 - Port the H3-batched reverse geocoder (it's the one genuinely good piece of the
   old code) to the new model. Batch by a **coarse parent** of `h3_cell`
   (`cell_to_parent(cell, 9 or 10)`) to keep the API-call savings.
-- `geocode` command + ninja-callable service; sets `place_label`, `country_code`,
-  `geocoded_at`. Refine `taken_at` timezone once a location is known.
+- `geocode` command + reusable service; sets `place_label`, `country_code`,
+  `geocoded_at`. `taken_at` is left untouched — sidecar timestamps are already
+  authoritative UTC instants, so there is no timezone step here.
 
 ---
 
@@ -253,9 +254,9 @@ export's exact format.
 
 ### One-time setup
 ```bash
-uv sync                                 # install deps (adds django-ninja, pydantic, ...)
-cp .env.example .env                    # set GOOGLE_MAPS_API_KEY, DATABASE_URL, PHOTOS_BASE_DIR
-python manage.py migrate                # create the fresh schema
+uv sync                                 # install deps (django-ninja, pydantic, ...)
+echo "GOOGLE_MAPS_API_KEY=..." > .env   # only required env var; db + thumbnails live under data/
+python manage.py migrate                # create the fresh schema (data/track_me.db)
 ```
 
 ### Each incremental Takeout (the repeatable loop)
@@ -268,7 +269,7 @@ unzip ~/Downloads/takeout-2026-06.zip -d /tmp/takeout-2026-06
 python manage.py ingest /tmp/takeout-2026-06
 
 # 3. GEOCODE: turn coordinates into place names + country (H3-batched, cheap)
-python manage.py geocode --h3-resolution 10
+python manage.py geocode --resolution 9
 
 # 4. (Phase 4, later) build the timeline from located items
 python manage.py build_timeline
@@ -294,9 +295,9 @@ In the UI search box, filter `no_location` or `needs_review` to find items with 
 location, set a pin on the map to geotag them, and click **"View on Google
 Photos ↗"** in the modal to confirm against the original.
 
-### Tests / quality (unchanged tooling)
+### Tests / quality
 ```bash
 pytest
 ruff check . --fix && ruff format .
-pyright
+ty check .
 ```
