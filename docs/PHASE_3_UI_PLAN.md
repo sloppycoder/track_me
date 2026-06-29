@@ -1,7 +1,15 @@
 # Phase 3 — Spot-check UI (HTMX + Alpine)
 
-Status: **planned, not started.** Pick this up after Phases 1 (ingest) and 2
-(geocoding) are validated on the full 20-zip dataset.
+> **Status: ON HOLD — may not be needed.** Phases 1–2 are validated and the catalog
+> answers real travel questions directly from the DB (country/city trips, GPX
+> export) with no UI at all, so a browse/visualization UI is a nice-to-have, not
+> load-bearing. The one piece with a genuine unmet need is **manually geotagging the
+> long tail** (pre-GPS photos with no location + `needs_review` items) — and even
+> that could be a small CSV-in/CSV-out helper rather than the full HTMX/Alpine/map
+> app described below. Revisit before building; don't implement on spec.
+
+The plan below is preserved as the original design, to pick up *if* a UI is wanted.
+It assumes Phases 1 (ingest) and 2 (geocoding) are validated on the full dataset.
 
 Goal: a lightweight UI to eyeball ingested media, see where each item's
 location/time came from, jump to the original on Google Photos, and manually fix

@@ -1,7 +1,7 @@
 [project]
 name = "track_me"
 version = "0.1.0"
-description = "Cookiecutter template for generic Python 3 project with tooling configuration for testing, linting and IDE support"
+description = "Local-first tool that turns Google Takeout photo exports into a queryable travel timeline"
 authors = [{ name = "Li Lin", email = "guru.lin@gmail.com" }]
 readme = "README.md"
 
@@ -23,6 +23,7 @@ dependencies = [
     "python-dotenv >= 1.1.1",
     "pytz>=2025.2",
     "pyyaml>=6.0.2",
+    "reverse-geocoder>=1.5.1",
     "timezonefinder>=8.2.4",
     "whitenoise>=6.11.0",
 ]

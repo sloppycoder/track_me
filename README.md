@@ -1,42 +1,87 @@
-# Welcome to Python project
+# track_me
 
-## Cookiecutter template for Python3 project
+A local-first tool that turns **Google Takeout** photo exports into a clean,
+queryable travel timeline. It parses each photo's Takeout sidecar JSON (plus EXIF)
+for an authoritative timestamp and location, reverse-geocodes coordinates into
+place names, and keeps a deep link back to the original on Google Photos. The
+Takeout extract itself is treated as transient — everything is re-derivable, so
+the local SQLite catalog is the source of truth you keep.
 
-This is a [cookiecutter](https://www.cookiecutter.io/) template for generic Python3 project with preconfigured with the following tools:
+> **Status:** mid re-architecture. The catalog + ingestion + geocoding pipeline
+> (the `library` and `places` apps) is built and working. The spot-check/geotag UI
+> is **planned but not started** — see `REARCH_PLAN.md` and `docs/PHASE_3_UI_PLAN.md`.
+> A legacy `myphoto` app still serves the old UI and is slated for removal.
 
+## Stack
 
-| Tool                                            | Purpose                                                                |
-| ----------------------------------------------- | ---------------------------------------------------------------------- |
-| [uv](https://docs.astral.sh/uv/)                | Dependency management and virtual environment setup                    |
-| [ruff](https://docs.astral.sh/ruff/)            | Linter for Python code                                                 |
-| [pre-commit](https://pre-commit.com/)           | Framework for managing and maintaining multi-language pre-commit hooks |
-| [pyright](https://github.com/microsoft/pyright) | Static type checker for Python                                         |
-| [VS Code](https://code.visualstudio.com/)       | Integrated development environment with devcontainer support           |
+| Tool | Purpose |
+| --- | --- |
+| [Django](https://www.djangoproject.com/) 5 | app framework, ORM, management commands |
+| [django-ninja](https://django-ninja.dev/) + Pydantic | typed API at `/api` (auto docs at `/api/docs`) |
+| [SQLite](https://www.sqlite.org/) (local-first) | catalog at `data/track_me.db`; Postgres via `DATABASE_URL` |
+| [H3](https://h3geo.org/) | spatial cells for batched geocoding + clustering |
+| [uv](https://docs.astral.sh/uv/) | dependency + virtualenv management |
+| [ruff](https://docs.astral.sh/ruff/) | lint + format |
+| [ty](https://github.com/astral-sh/ty) | type checking (**not** pyright) |
+
+Requires **Python 3.12+**.
 
 ## Setup
 
-The easiest way to get started is use [Visual Studio Code with devcontainer](https://code.visualstudio.com/docs/devcontainers/containers)
-
-
 ```shell
-
-# create virtualenv and install dependencies
-uv sync
-source .venv/bin/activate
-pre-commit install
-ruff check --fix .
-pytest -v
-
+uv sync                                   # create venv + install deps
+echo "GOOGLE_MAPS_API_KEY=..." > .env     # only needed for the geocode step
+python manage.py migrate                  # create the fresh schema (data/track_me.db)
 ```
 
-## Important files
+The `data/` directory (SQLite db + optional thumbnails) is auto-created at startup
+and gitignored.
 
-| File                                                                           | Purpose                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [main.py](main.py)                                                             | main point for FastAPI                                                                                                                                                                      |
-| [settings.py](settings.py)                                                     | read settings from file specified by APP_SETTINGS_ENV or .env if it's not set. Also initializes feature flag provider.                                                                      |
-| [security.py](security.py)                                                     | verify JWT token using keys from a [JWKS](https://datatracker.ietf.org/doc/html/rfc7517) endpoint                                                                                           |
-| [database.py](database.py)                                                     | provides both sync and async database. available only if sqlmodel is selected. setup                                                                                                        |
-| [tests/conftest.py](tests/conftest.py)                                         | [pytest](https://docs.pytest.org/en/stable/) test setup (https://docs.pytest.org/en/stable/) test setup and fixtures, including http client, test database setup and seeding with data, etc |  |
-| [me/api.py](me/api.py)       | api endpoints. the router object will be included by main.py.                                                                                                                               |
-| [me/models.py](me/models.py) | model classes                                                                                                                                                                               |
+## The pipeline
+
+```shell
+# 1. INGEST a Takeout extract: parse sidecars + EXIF, set taken_at for every item,
+#    resolve location, store the Google Photos link, derive a local timezone.
+#    Thumbnails are opt-in (--thumbnails); the timeline doesn't need them.
+python manage.py ingest /path/to/takeout-extract [--thumbnails] [--reprocess]
+
+# 2. GEOCODE located items into place names + country codes (H3-batched, Google API).
+python manage.py geocode [--resolution 9] [--max-api-calls N] [--recalculate]
+python manage.py geocode --estimate        # count API calls / cost without calling
+
+# 3. EXPORT located media as a timestamped track for timeline tools.
+python manage.py export_gpx [--format gpx|geojson] [--year YYYY] [--output FILE]
+```
+
+`ingest` and `geocode` are **re-runnable and incremental**: already-seen items
+(matched by `MediaItem.dedupe_key`) are skipped, and manual edits are never
+overwritten.
+
+## Development server
+
+Tailwind CSS must be compiled before serving (the UI is broken without it):
+
+```shell
+python manage.py tailwind build           # compile once
+python manage.py tailwind runserver       # compile + watch + runserver
+```
+
+- API docs (auto-generated): http://localhost:8000/api/docs
+
+## Quality
+
+Run on Python files after changes (see `CLAUDE.md` for the full workflow):
+
+```shell
+ruff format <file.py>
+ruff check . --fix
+ruff check .
+pytest
+ty check .
+```
+
+## More
+
+- **`CLAUDE.md`** — working agreement for coding agents (commands, conventions).
+- **`REARCH_PLAN.md`** — the overall rebuild plan (Phases 0–4).
+- **`docs/PHASE_3_UI_PLAN.md`** — the planned spot-check UI (on hold).

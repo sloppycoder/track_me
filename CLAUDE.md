@@ -43,7 +43,7 @@ with Postgres (e.g. Cloud Run). The fresh schema is re-derivable — recreate wi
 
 ```bash
 # 1. Ingest a Google Takeout extract: parse sidecar JSON + EXIF, set taken_at for
-#    every item, resolve location, store the Google Photos URL, cache thumbnails.
+#    every item, resolve location, store the Google Photos URL (thumbnails opt-in).
 python manage.py ingest <takeout-dir>        # directory arg is REQUIRED
 
 # 2. Reverse-geocode located items into place names (H3-batched, Google API).
@@ -54,6 +54,39 @@ Both commands are re-runnable/incremental (dedupe by `MediaItem.dedupe_key`) and
 never overwrite manual edits. Key model: `library/models.py::MediaItem`
 (`taken_at`, `latitude/longitude`, single `h3_cell`, `location_source`,
 `time_source`, `google_photos_url`, `needs_review`, content-addressed thumbnails).
+
+## Answering travel/trip questions ("which countries/cities did I visit, with dates")
+
+When asked to turn the photo catalog into a **timeline of distinct trips/visits**,
+apply this recipe (validated against `data/track_me.db`):
+
+1. **Pull located photos in time order.** Filter to the requested window, require
+   coordinates, `order_by("taken_at")`. Use `taken_at` (UTC) for ordering; note in
+   the answer that day boundaries are UTC (offer `local_taken_at` if it matters).
+2. **Pick the place label per photo:**
+   - *Country-level* — use `country_code` directly.
+   - *City-level* — do NOT parse `place_label` (it's a full formatted address; the
+     city sits at a different comma-index per country). Reverse-geocode the
+     coordinates **offline** with the `reverse_geocoder` package (a project
+     dependency; GeoNames nearest-city, no API key/network). Use `name, admin1 (cc)`
+     as the key. NOTE: it is installed but NOT wired into the model/pipeline yet —
+     it's an analysis aid only; there is no stored `city` column, so derive at query
+     time. (`MediaItem` stores only free-text `place_label` + `country_code`.)
+3. **Segment into contiguous runs:** walk the ordered list, start a new trip each
+   time the label changes; track `from`/`to` = first/last `taken_at` of the run.
+4. **Smooth border/blip noise:** absorb any run lasting **< 24h that is bracketed
+   by the same label on both sides** (same-day border crossings, single stray
+   photos), then re-coalesce adjacent same-label runs. Repeat to a fixed point.
+5. **City-level only — collapse metros by proximity:** raw GeoNames names over-split
+   a metro into neighborhoods (Madrid→Retiro/Salamanca; Athens suburbs). Cluster
+   consecutive photos within **~50 km** (haversine vs running centroid) into one
+   stay, label it by the *most common* city in the cluster. The radius is a knob —
+   bigger merges adjacent cities, smaller splits metros into districts.
+
+Output: chronological, **non-overlapping** date ranges; list a place once per
+distinct visit (a revisited city appears multiple times). Ignore photo counts
+unless asked. Day-trips from a base city legitimately appear as their own stays.
+Reusable scripts live in the session scratchpad (`city_trips*.py`).
 
 ## API
 

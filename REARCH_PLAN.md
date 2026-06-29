@@ -77,6 +77,7 @@ class MediaItem(models.Model):
     # time (authoritative, tz-aware) -- set for EVERY item at ingest
     taken_at = models.DateTimeField(null=True, db_index=True)
     time_source = models.CharField(max_length=12, null=True)  # sidecar|exif|file_mtime|manual
+    timezone = models.CharField(max_length=64, null=True)     # IANA zone at the location (offline-derived)
 
     # location
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True)
@@ -175,11 +176,12 @@ Per item, merge sources with a clear precedence:
   `manual` location on re-ingest).
 - **thumbnail:** generate + cache **eagerly** now (see below).
 
-### `library/media/thumbnails.py` — eager, content-addressed
+### `library/media/thumbnails.py` — content-addressed
 - Thumbnail filename keyed by `dedupe_key` (not DB id), so it survives DB resets.
-- Generated during ingest and `thumbnail_cached_at` set, because the Takeout
-  extract is **deleted afterward**. Serving never depends on the original being
-  present; missing original + cached thumb = fine, original viewed via Google link.
+- **Opt-in** at ingest via `--thumbnails` (default off): the timeline data doesn't
+  need them, so they're only generated when a UI will display them. When generated,
+  `thumbnail_cached_at` is set; serving never depends on the original being present
+  (missing original + cached thumb = fine, original viewed via Google link).
 
 ### `library/management/commands/ingest.py`
 Replaces `process_photos`. Re-runnable; dedupes across dumps.
@@ -200,8 +202,10 @@ high `google_photos_url` coverage; delete the extract, thumbnails still load.
   old code) to the new model. Batch by a **coarse parent** of `h3_cell`
   (`cell_to_parent(cell, 9 or 10)`) to keep the API-call savings.
 - `geocode` command + reusable service; sets `place_label`, `country_code`,
-  `geocoded_at`. `taken_at` is left untouched — sidecar timestamps are already
-  authoritative UTC instants, so there is no timezone step here.
+  `geocoded_at`. `taken_at` (an absolute UTC instant from the sidecar) is left
+  untouched. Note: a separate **offline** step derives each item's IANA `timezone`
+  from its coordinates (no API), used for local-time bucketing in the timeline.
+  `geocode --estimate` counts API calls/cost without spending any.
 
 ---
 
@@ -265,16 +269,19 @@ python manage.py migrate                # create the fresh schema (data/track_me
 unzip ~/Downloads/takeout-2026-06.zip -d /tmp/takeout-2026-06
 
 # 2. INGEST: parse sidecars + EXIF, set timestamps, locations, Google links,
-#    compute dedupe keys, and cache thumbnails eagerly
+#    compute dedupe keys (thumbnails opt-in via --thumbnails)
 python manage.py ingest /tmp/takeout-2026-06
 
 # 3. GEOCODE: turn coordinates into place names + country (H3-batched, cheap)
 python manage.py geocode --resolution 9
 
-# 4. (Phase 4, later) build the timeline from located items
+# 4. (optional) export located media as a GPX/GeoJSON track for timeline tools
+python manage.py export_gpx --format gpx --output track.gpx
+
+# 5. (Phase 4, later) build the timeline from located items
 python manage.py build_timeline
 
-# 5. delete the extract — thumbnails + Google links persist, originals via the link
+# 6. delete the extract — thumbnails + Google links persist, originals via the link
 rm -rf /tmp/takeout-2026-06
 ```
 `ingest` and `geocode` are **re-runnable and incremental**: already-seen items

@@ -1225,6 +1225,16 @@ wheels = [
 ]
 
 [[package]]
+name = "reverse-geocoder"
+version = "1.5.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0b/0f/b7d5d4b36553731f11983e19e1813a1059ad0732c5162c01b3220c927d31/reverse_geocoder-1.5.1.tar.gz", hash = "sha256:2a2e781b5f69376d922b78fe8978f1350c84fce0ddb07e02c834ecf98b57c75c", size = 2246559, upload-time = "2016-09-15T16:46:46.277Z" }
+
+[[package]]
 name = "ruff"
 version = "0.15.20"
 source = { registry = "https://pypi.org/simple" }
@@ -1393,6 +1403,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pytz" },
     { name = "pyyaml" },
+    { name = "reverse-geocoder" },
     { name = "timezonefinder" },
     { name = "whitenoise" },
 ]
@@ -1431,6 +1442,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "pytz", specifier = ">=2025.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "reverse-geocoder", specifier = ">=1.5.1" },
     { name = "timezonefinder", specifier = ">=8.2.4" },
     { name = "whitenoise", specifier = ">=6.11.0" },
 ]
