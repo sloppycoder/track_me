@@ -16,6 +16,10 @@ DATABASES = {
 TEST_DIR = Path(__file__).parent
 PHOTOS_BASE_DIR = str(TEST_DIR / "test_photos")
 
+# WhiteNoise serves static files in production; in tests collectstatic is never
+# run, so it warns about a missing STATIC_ROOT. It has no role in tests -> drop it.
+MIDDLEWARE = [m for m in MIDDLEWARE if "whitenoise" not in m.lower()]
+
 # Test-specific settings
 DEBUG = False
 PASSWORD_HASHERS = [
