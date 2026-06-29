@@ -89,20 +89,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "track_me.wsgi.application"
 
-postgres_options = {
-    "OPTIONS": {
+# Local-first: default to a SQLite file. Set DATABASE_URL to override (e.g. a
+# Cloud SQL Postgres instance when deploying to Cloud Run).
+database_config = dj_database_url.config(
+    default=f"sqlite:///{BASE_DIR / 'track_me.db'}",
+    conn_max_age=600,
+    conn_health_checks=True,
+)
+
+# Apply Postgres-only connection options only when actually using Postgres.
+if str(database_config.get("ENGINE", "")).endswith("postgresql"):
+    database_config["OPTIONS"] = {
         "sslmode": "require",
         "connect_timeout": 5,
         "options": "-c statement_timeout=10000",
     }
-}
-database_config = (
-    dj_database_url.config(
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
-    | postgres_options
-)
+
 DATABASES = {"default": database_config}
 
 

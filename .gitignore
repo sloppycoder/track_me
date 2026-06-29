@@ -28,6 +28,11 @@ cdk.out
 # local files
 *key*.json
 tmp/*
+
+# local sqlite database
+*.db
+*.sqlite3
+*.db-journal
 .claude/settings.local.json
 .django_tailwind_cli/
 assets/css/
