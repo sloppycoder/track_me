@@ -38,3 +38,6 @@ tmp/*
 assets/css/
 staticfiles/css/
 .playwright-mcp/*
+
+# macOS
+.DS_Store

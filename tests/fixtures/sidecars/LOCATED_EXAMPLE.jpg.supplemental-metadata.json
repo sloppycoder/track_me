@@ -1,0 +1,30 @@
+{
+  "title": "LOCATED_EXAMPLE.jpg",
+  "description": "",
+  "imageViews": "0",
+  "creationTime": {
+    "timestamp": "1744698956",
+    "formatted": "Apr 15, 2025, 6:35:56\u202fAM UTC"
+  },
+  "photoTakenTime": {
+    "timestamp": "1744690217",
+    "formatted": "Apr 15, 2025, 4:10:17\u202fAM UTC"
+  },
+  "geoData": {
+    "latitude": 30.6,
+    "longitude": 104.1,
+    "altitude": 0.0
+  },
+  "url": "https://photos.google.com/photo/FAKE0099ANONTOKEN_____",
+  "googlePhotosOrigin": {
+    "mobileUpload": {
+      "deviceFolder": {
+        "localFolderName": ""
+      },
+      "deviceType": "ANDROID_PHONE"
+    }
+  },
+  "appSource": {
+    "androidPackageName": "com.google.android.GoogleCamera"
+  }
+}
