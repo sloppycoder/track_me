@@ -4,7 +4,7 @@ from library.ingest.pipeline import IngestPipeline
 
 
 class Command(BaseCommand):
-    help = "Ingest a Google Takeout extract: parse sidecars + EXIF, cache thumbnails"
+    help = "Ingest a Google Takeout extract: parse sidecars + EXIF, geotag (thumbnails opt-in)"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -17,14 +17,24 @@ class Command(BaseCommand):
             action="store_true",
             help="Reprocess items even if already ingested",
         )
+        parser.add_argument(
+            "--thumbnails",
+            action="store_true",
+            help="Also generate thumbnails (off by default; timeline data doesn't need them)",
+        )
 
     def handle(self, *args, **options):
         directory = options["directory"]
         self.stdout.write(f"Ingesting from: {directory}")
         if options["force"]:
             self.stdout.write(self.style.WARNING("Force reprocess enabled"))
+        if options["thumbnails"]:
+            self.stdout.write("Thumbnails enabled")
 
-        pipeline = IngestPipeline(progress_callback=self.stdout.write)
+        pipeline = IngestPipeline(
+            progress_callback=self.stdout.write,
+            generate_thumbnails=options["thumbnails"],
+        )
         stats = pipeline.ingest_directory(directory, force=options["force"])
 
         self.stdout.write("\n" + "=" * 60)

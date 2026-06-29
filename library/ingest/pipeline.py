@@ -97,8 +97,9 @@ def _resolve_taken_at(
 
 
 class IngestPipeline:
-    def __init__(self, progress_callback=None):
+    def __init__(self, progress_callback=None, generate_thumbnails: bool = False):
         self.progress = progress_callback or (lambda _m: None)
+        self.generate_thumbnails = generate_thumbnails
         self.matcher = SidecarMatcher()
         self.thumbnails = ThumbnailService(
             cache_dir=settings.THUMBNAIL_CACHE_DIR, size=settings.THUMBNAIL_SIZE
@@ -215,7 +216,11 @@ class IngestPipeline:
         item.save()
 
         # Eager thumbnail so it survives deletion of the Takeout extract.
-        if kind == MediaKind.PHOTO and not self.thumbnails.exists(item.dedupe_key):
+        if (
+            self.generate_thumbnails
+            and kind == MediaKind.PHOTO
+            and not self.thumbnails.exists(item.dedupe_key)
+        ):
             if self.thumbnails.generate(path, item.dedupe_key):
                 item.thumbnail_cached_at = dj_tz.now()
                 item.save(update_fields=["thumbnail_cached_at"])
@@ -241,4 +246,6 @@ class IngestPipeline:
             item.needs_review = True
 
     def _thumb_ok(self, item: MediaItem, kind: str | None) -> bool:
+        if not self.generate_thumbnails:
+            return True
         return kind != MediaKind.PHOTO or self.thumbnails.exists(item.dedupe_key)

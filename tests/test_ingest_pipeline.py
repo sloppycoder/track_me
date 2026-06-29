@@ -98,11 +98,27 @@ def test_orphan_photo_gets_mtime(takeout):
 
 @pytest.mark.django_db
 def test_thumbnails_cached_eagerly(takeout):
-    pipeline = IngestPipeline()
+    pipeline = IngestPipeline(generate_thumbnails=True)  # opt-in
     pipeline.ingest_directory(takeout)
     for item in MediaItem.objects.all():
         assert item.thumbnail_cached_at is not None
         assert pipeline.thumbnails.exists(item.dedupe_key)
+
+
+@pytest.mark.django_db
+def test_thumbnails_optional(takeout):
+    pipeline = IngestPipeline(generate_thumbnails=False)
+    pipeline.ingest_directory(takeout)
+    # Items still fully ingested (time + location), just no thumbnails.
+    assert MediaItem.objects.count() == 3
+    located = MediaItem.objects.get(file_name="IMG_1.JPG")
+    assert located.has_location and located.taken_at is not None
+    for item in MediaItem.objects.all():
+        assert item.thumbnail_cached_at is None
+        assert not pipeline.thumbnails.exists(item.dedupe_key)
+    # And re-ingest still skips (completeness doesn't require a thumbnail here).
+    stats = IngestPipeline(generate_thumbnails=False).ingest_directory(takeout)
+    assert stats.skipped == 3
 
 
 @pytest.mark.django_db
