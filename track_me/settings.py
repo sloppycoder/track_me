@@ -12,8 +12,12 @@ devkey = "django-insecure-7@l%ik7thl2qo+8#zm%^6e(+72c!1310tujddhw2bgqk6f)r7m"
 SECRET_KEY = os.environ.get("SECRET_KEY", devkey)
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY")
 
+# Single local-state root (SQLite db + thumbnails). Override with DATA_DIR.
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 # Photo thumbnail settings
-THUMBNAIL_CACHE_DIR = Path(os.getenv("THUMBNAIL_CACHE_DIR", str(BASE_DIR / "tmp" / "thumbnails")))
+THUMBNAIL_CACHE_DIR = Path(os.getenv("THUMBNAIL_CACHE_DIR", str(DATA_DIR / "thumbnails")))
 THUMBNAIL_SIZE = (
     int(os.getenv("THUMBNAIL_WIDTH", "300")),
     int(os.getenv("THUMBNAIL_HEIGHT", "200")),
@@ -90,10 +94,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "track_me.wsgi.application"
 
-# Local-first: default to a SQLite file. Set DATABASE_URL to override (e.g. a
-# Cloud SQL Postgres instance when deploying to Cloud Run).
+# Local-first: default to a SQLite file under data/. Set DATABASE_URL to
+# override (e.g. a Cloud SQL Postgres instance when deploying to Cloud Run).
 database_config = dj_database_url.config(
-    default=f"sqlite:///{BASE_DIR / 'track_me.db'}",
+    default=f"sqlite:///{DATA_DIR / 'track_me.db'}",
     conn_max_age=600,
     conn_health_checks=True,
 )

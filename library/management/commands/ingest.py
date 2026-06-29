@@ -1,5 +1,4 @@
-from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand
 
 from library.ingest.pipeline import IngestPipeline
 
@@ -10,9 +9,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "directory",
-            nargs="?",
             type=str,
-            help="Takeout extract directory (defaults to PHOTOS_BASE_DIR)",
+            help="Takeout extract directory to ingest (changes per incremental export)",
         )
         parser.add_argument(
             "--force",
@@ -21,10 +19,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        directory = options["directory"] or settings.PHOTOS_BASE_DIR
-        if not directory:
-            raise CommandError("No directory given and PHOTOS_BASE_DIR is unset.")
-
+        directory = options["directory"]
         self.stdout.write(f"Ingesting from: {directory}")
         if options["force"]:
             self.stdout.write(self.style.WARNING("Force reprocess enabled"))

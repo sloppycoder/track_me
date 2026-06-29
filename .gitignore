@@ -29,7 +29,9 @@ cdk.out
 *key*.json
 tmp/*
 
-# local sqlite database
+# local data dir: keep the folder, ignore its contents (sqlite db + thumbnails)
+/data/*
+!/data/.gitkeep
 *.db
 *.sqlite3
 *.db-journal
