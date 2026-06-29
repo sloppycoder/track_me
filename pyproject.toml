@@ -57,6 +57,9 @@ filterwarnings = [
 env_files = [".env"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "playwright: Playwright browser UI tests; run only on macOS (auto-skipped on CI/Linux)",
+]
 
 [tool.coverage.run]
 source = ["."]

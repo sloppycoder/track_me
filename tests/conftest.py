@@ -1,11 +1,22 @@
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 # Allow Django database operations in async context (needed for live_server tests)
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip @pytest.mark.playwright tests off macOS (e.g. CI / remote Linux)."""
+    if sys.platform == "darwin":
+        return
+    skip = pytest.mark.skip(reason="Playwright UI tests run only on macOS")
+    for item in items:
+        if "playwright" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture(scope="session", autouse=True)
