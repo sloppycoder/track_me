@@ -96,12 +96,3 @@ ignore = ["E203", "E266", "C901"]
 
 [tool.ty.environment]
 python-version = "3.12"
-
-[tool.ty.src]
-# The legacy `myphoto` app (and its tests) is slated for removal once the new
-# library/UI is fully ported; exclude it so ty stays strict on the new code
-# without being blocked by mypy-era `# type: ignore` comments it doesn't honor.
-exclude = [
-    "myphoto",
-    "tests/test_views.py",
-]

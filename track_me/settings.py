@@ -54,8 +54,6 @@ INSTALLED_APPS = [
     # New clean apps (rebuild)
     "library",
     "places",
-    # Legacy app (UI only, being ported then removed)
-    "myphoto",
 ]
 
 TAILWIND_CLI_VERSION = "2.7.5"  # use tailwind_extra cli that supports DaisyUI
@@ -169,10 +167,6 @@ LOGGING = {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
-        },
-        "myphoto": {
-            "level": "DEBUG",
-            "propagate": True,
         },
     },
 }

@@ -8,9 +8,10 @@ Takeout extract itself is treated as transient — everything is re-derivable, s
 the local SQLite catalog is the source of truth you keep.
 
 > **Status:** mid re-architecture. The catalog + ingestion + geocoding pipeline
-> (the `library` and `places` apps) is built and working. The spot-check/geotag UI
-> is **planned but not started** — see `REARCH_PLAN.md` and `docs/PHASE_3_UI_PLAN.md`.
-> A legacy `myphoto` app still serves the old UI and is slated for removal.
+> (the `library` and `places` apps) is built and working. There is no web UI yet —
+> the spot-check/geotag UI is **on hold** (see `REARCH_PLAN.md` and
+> `docs/PHASE_3_UI_PLAN.md`), so `/` redirects to the API docs. The legacy
+> `myphoto` app has been removed.
 
 ## Stack
 

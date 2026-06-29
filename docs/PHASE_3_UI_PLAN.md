@@ -21,16 +21,16 @@ the long tail (especially old pre-GPS photos). Built on the new stack
 - Phase 1 + 2 landed: `MediaItem` rows have `taken_at`, `location_source`,
   `google_photos_url`, cached thumbnails, and (where possible) `place_label` /
   `country_code`.
-- Decide whether to keep the legacy `myphoto` app until this ships, then delete
-  it (app, templates, urls, `tests/test_views.py`, `tests/test_smart_search.py`,
-  and the ty exclude for `myphoto`).
+- The legacy `myphoto` app has **already been removed** (app, templates, urls,
+  legacy tests, ty exclude). Its smart-search parser was salvaged into
+  `library/search.py` (tests in `tests/test_search.py`) — wire the new search on
+  top of that rather than re-porting.
 
 ## Scope
 
 ### 1. API (django-ninja) — `library/api.py`, mounted at `/api/media`
 - `GET /api/media` — paginated list/search. Query params:
-  - `q`: smart search (reuse/port the date + text parsing from the legacy
-    `parse_smart_search`; it's good and worth keeping).
+  - `q`: smart search (use `library.search.parse_smart_search` — already salvaged).
   - filters: `location_source` (e.g. `none`), `needs_review`, `country`,
     `year`/date-range, `has_url`.
   - returns Pydantic `MediaOut` (id, file_name, taken_at, lat/lon,
@@ -75,12 +75,12 @@ Server-rendered partials, no SPA/build step:
   "Manual".
 
 ## Cleanup when this ships
-- Delete the `myphoto` app (models, services, views, urls, templates).
-- Remove `myphoto` from `INSTALLED_APPS`, the root urlconf include, the ty
-  `exclude`, and the legacy tests (`test_views.py`, `test_smart_search.py` —
-  port the date-parsing tests to the new search first if still relevant).
-- Drop the now-unused `_build_tailwind_css` session fixture if no template tests
-  remain (or keep for the new UI tests).
+- ~~Delete the `myphoto` app and legacy tests~~ — **done** (app removed,
+  `parse_smart_search` salvaged to `library/search.py`, root `/` now redirects to
+  `/api/docs`).
+- Replace that root redirect with the real spot-check grid view.
+- Revisit the `_build_tailwind_css` session fixture: keep it for the new UI tests,
+  or drop it if no template tests end up existing.
 
 ## Out of scope (later phases)
 - Timeline reconstruction (`Stay`/`Trip`, interpolation) — Phase 4.

@@ -15,13 +15,14 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
-from django.urls import include, path
+from django.urls import path
+from django.views.generic import RedirectView
 
 from track_me.api import api
 
 urlpatterns = [
     # django-ninja API + auto docs at /api/docs
     path("api/", api.urls),
-    # Web UI (still served by the legacy app during the rebuild)
-    path("", include("myphoto.urls")),
+    # No web UI yet (Phase 3 on hold); send the bare root to the API docs.
+    path("", RedirectView.as_view(url="/api/docs", permanent=False)),
 ]

@@ -1,10 +1,10 @@
 # Instructions for coding agents
 
 This project is being re-architected. See **REARCH_PLAN.md** (overall plan,
-Phases 0–4) and **docs/PHASE_3_UI_PLAN.md** (the UI, not yet built). The new code
-lives in the `library` and `places` apps; the legacy `myphoto` app still serves
-the old Geo Tag / Footprints UI but is **being replaced and removed in Phase 3** —
-do not build new features on it.
+Phases 0–4) and **docs/PHASE_3_UI_PLAN.md** (the UI, on hold). The code lives in
+the `library` and `places` apps. The legacy `myphoto` app has been **deleted**;
+its one reusable piece (smart-search parsing) was salvaged into `library/search.py`.
+There is no web UI yet — `/` redirects to the API docs.
 
 ## Key Dependencies
 - Python 3.12+
