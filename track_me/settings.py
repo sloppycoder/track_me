@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "django_tailwind_cli",
     # New clean apps (rebuild)
     "library",
+    "places",
     # Legacy app (UI only, being ported then removed)
     "myphoto",
 ]
