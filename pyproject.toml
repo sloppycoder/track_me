@@ -10,6 +10,7 @@ dependencies = [
     "dateparser>=1.2.2",
     "dj-database-url>=3.0.1",
     "django>=5.2",
+    "django-ninja>=1.6.2",
     "django-tailwind-cli>=4.4.2",
     "googlemaps>=4.10.0",
     "gunicorn>=23.0.0",
@@ -18,6 +19,7 @@ dependencies = [
     "pillow>=12.0.0",
     "pillow-heif>=1.1.1",
     "psycopg>=3.3.2",
+    "pydantic>=2.13.4",
     "python-dotenv >= 1.1.1",
     "pytz>=2025.2",
     "pyyaml>=6.0.2",
@@ -32,13 +34,11 @@ dev = [
     "pytest-mock >= 3.14",
     "pytest-cov >= 6.1",
     "pre-commit >= 4.0.1",
-    "ruff >= 0.14.10",
-    "pyright >= 1.1.405",
+    "ruff >= 0.15.20",
     "pytest-django>=4.11.1",
     "django-stubs>=5.2",
     "playwright>=1.55.0",
-    "ty>=0.0.14",
-    "deptry>=0.22",
+    "ty>=0.0.55",
     "pytest-playwright>=0.7.2",
     "pytest-asyncio>=1.3.0",
 ]
@@ -89,22 +89,14 @@ select = [
 ] # Enable checks for PEP8, imports, and other standard rules
 ignore = ["E203", "E266", "C901"]
 
-[tool.pyright]
-include = [
-    "*.py",
-    "tests/*.py"
-]
-exclude = [
-    ".venv/",
-    "build/",
-]
-pythonVersion = "3.12"
+[tool.ty.environment]
+python-version = "3.12"
 
-[tool.deptry.per_rule_ignores]
-DEP002 = [
-    "django-tailwind-cli",
-    "gunicorn",
-    "psycopg",
-    "pyyaml",
-    "whitenoise",
+[tool.ty.src]
+# The legacy `myphoto` app (and its tests) is slated for removal once the new
+# library/UI is fully ported; exclude it so ty stays strict on the new code
+# without being blocked by mypy-era `# type: ignore` comments it doesn't honor.
+exclude = [
+    "myphoto",
+    "tests/test_views.py",
 ]

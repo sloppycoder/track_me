@@ -17,7 +17,11 @@ Including another URLconf
 
 from django.urls import include, path
 
+from track_me.api import api
+
 urlpatterns = [
-    # Admin disabled - not needed
+    # django-ninja API + auto docs at /api/docs
+    path("api/", api.urls),
+    # Web UI (still served by the legacy app during the rebuild)
     path("", include("myphoto.urls")),
 ]

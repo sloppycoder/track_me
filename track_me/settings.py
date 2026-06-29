@@ -47,6 +47,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django_tailwind_cli",
+    # New clean apps (rebuild)
+    "library",
+    # Legacy app (UI only, being ported then removed)
     "myphoto",
 ]
 
