@@ -64,5 +64,5 @@ def test_geojson_output(points):
 
 @pytest.mark.django_db
 def test_year_filter(points):
-    assert located_items(year=2025).count() == 2
-    assert located_items(year=2024).count() == 1
+    assert len(located_items(year=2025)) == 2
+    assert len(located_items(year=2024)) == 1

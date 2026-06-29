@@ -1,11 +1,14 @@
 """End-to-end ingestion tests against a synthetic Takeout tree."""
 
 import json
+from datetime import datetime
+from datetime import timezone as dt_timezone
+from pathlib import Path
 
 import pytest
 from PIL import Image
 
-from library.ingest.pipeline import IngestPipeline, compute_dedupe_key
+from library.ingest.pipeline import IngestPipeline, _resolve_taken_at, compute_dedupe_key
 from library.models import LocationSource, MediaItem, TimeSource
 
 TOKYO = (35.6895, 139.6917)
@@ -71,6 +74,7 @@ def test_located_photo(takeout):
     assert item.taken_at is not None
     assert item.google_photos_url == "https://photos.google.com/photo/AAA"
     assert item.h3_cell  # computed from coords
+    assert item.timezone == "Asia/Tokyo"  # offline-derived from coords
     assert not item.needs_review
 
 
@@ -142,6 +146,18 @@ def test_manual_location_preserved_on_reingest(takeout):
     item.refresh_from_db()
     assert item.location_source == LocationSource.MANUAL
     assert float(item.latitude) == pytest.approx(1.29)
+
+
+def test_exif_time_localized_with_tz():
+    # 14:30 JST (Asia/Tokyo, UTC+9) -> 05:30 UTC
+    dt, src = _resolve_taken_at(None, "2019:08:04 14:30:00", Path("/no/such"), tz="Asia/Tokyo")
+    assert src == TimeSource.EXIF
+    assert dt == datetime(2019, 8, 4, 5, 30, tzinfo=dt_timezone.utc)
+
+
+def test_exif_time_utc_fallback_without_tz():
+    dt, src = _resolve_taken_at(None, "2019:08:04 14:30:00", Path("/no/such"), tz=None)
+    assert dt == datetime(2019, 8, 4, 14, 30, tzinfo=dt_timezone.utc)
 
 
 def test_dedupe_key_stable_across_paths():

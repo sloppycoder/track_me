@@ -66,6 +66,9 @@ class MediaItem(models.Model):
     time_source = models.CharField(
         max_length=12, choices=TimeSource.choices, null=True, blank=True
     )
+    # IANA zone at the photo's location (offline-derived); used for LOCAL-time
+    # bucketing so cross-timezone travel aligns to the right local day.
+    timezone = models.CharField(max_length=64, null=True, blank=True)
 
     # --- location --------------------------------------------------------
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
@@ -118,6 +121,22 @@ class MediaItem(models.Model):
     @property
     def has_location(self) -> bool:
         return self.latitude is not None and self.longitude is not None
+
+    @property
+    def local_taken_at(self):
+        """``taken_at`` converted to the photo's local zone (falls back to UTC).
+
+        Use this for any day/year bucketing in the timeline; use ``taken_at`` for
+        absolute chronological ordering.
+        """
+        if self.taken_at and self.timezone:
+            from zoneinfo import ZoneInfo
+
+            try:
+                return self.taken_at.astimezone(ZoneInfo(self.timezone))
+            except Exception:
+                return self.taken_at
+        return self.taken_at
 
     def set_location(self, lat: float, lon: float, source: str) -> None:
         """Set coordinates, recompute the H3 cell, and tag the source."""

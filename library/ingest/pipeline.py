@@ -26,6 +26,7 @@ from library.ingest.matcher import SidecarMatcher
 from library.ingest.sidecar import Sidecar, load_sidecar
 from library.media.thumbnails import ThumbnailService
 from library.models import LocationSource, MediaItem, MediaKind, TimeSource
+from library.tz import timezone_for as tz_for
 
 logger = logging.getLogger(__name__)
 
@@ -76,18 +77,35 @@ def compute_dedupe_key(
 
 
 def _resolve_taken_at(
-    sidecar: Sidecar | None, datetime_text: str | None, file_path: Path
+    sidecar: Sidecar | None,
+    datetime_text: str | None,
+    file_path: Path,
+    tz: str | None = None,
 ) -> tuple[datetime | None, str | None]:
-    """Capture time for EVERY item: sidecar epoch -> EXIF -> file mtime."""
+    """Capture time for EVERY item: sidecar epoch -> EXIF -> file mtime.
+
+    The sidecar timestamp and file mtime are absolute UTC instants. EXIF
+    DateTimeOriginal is a naive LOCAL wall-clock, so when the location's zone is
+    known we localize it correctly; otherwise we fall back to assuming UTC.
+    """
     if sidecar is not None and (epoch := sidecar.taken_epoch()) is not None:
         return datetime.fromtimestamp(epoch, tz=dt_timezone.utc), TimeSource.SIDECAR
 
     if datetime_text:
         try:
             naive = datetime.strptime(datetime_text.replace(":", "-", 2), "%Y-%m-%d %H:%M:%S")
-            return naive.replace(tzinfo=dt_timezone.utc), TimeSource.EXIF
         except ValueError:
-            pass
+            naive = None
+        if naive is not None:
+            if tz:
+                try:
+                    from zoneinfo import ZoneInfo
+
+                    aware = naive.replace(tzinfo=ZoneInfo(tz)).astimezone(dt_timezone.utc)
+                    return aware, TimeSource.EXIF
+                except Exception:
+                    pass
+            return naive.replace(tzinfo=dt_timezone.utc), TimeSource.EXIF
 
     try:
         mtime = file_path.stat().st_mtime
@@ -203,15 +221,27 @@ class IngestPipeline:
         item.exif = data.meta or None
         item.perceptual_hash = data.perceptual_hash
 
+        # Decide location first so the zone is known before resolving time
+        # (EXIF wall-clock needs the local zone to become a correct instant).
+        coords, loc_source = self._decide_coords(data, sidecar)
+        tz = tz_for(*coords) if coords else None
+
         # Time (preserve a manual override on re-ingest).
         if not (not created and item.time_source == TimeSource.MANUAL):
-            taken_at, time_source = _resolve_taken_at(sidecar, data.datetime_text, path)
+            taken_at, time_source = _resolve_taken_at(sidecar, data.datetime_text, path, tz)
             item.taken_at = taken_at
             item.time_source = time_source
 
         # Location (preserve a manual override on re-ingest).
         if not (not created and item.location_source == LocationSource.MANUAL):
-            self._apply_location(item, data, sidecar)
+            if coords is not None:
+                item.set_location(coords[0], coords[1], source=loc_source)
+                item.timezone = tz
+                item.needs_review = False
+            else:
+                item.clear_location()
+                item.timezone = None
+                item.needs_review = True
 
         item.save()
 
@@ -234,16 +264,13 @@ class IngestPipeline:
         else:
             stats.updated += 1
 
-    def _apply_location(self, item: MediaItem, data: exif_mod.ExifData, sidecar) -> None:
+    def _decide_coords(self, data: exif_mod.ExifData, sidecar):
+        """Pick coordinates + source: EXIF GPS first, then Takeout geoData."""
         if data.coords is not None:
-            item.set_location(*data.coords, source=LocationSource.EXIF_GPS)
-            item.needs_review = False
-        elif sidecar is not None and (coords := sidecar.coords()) is not None:
-            item.set_location(*coords, source=LocationSource.TAKEOUT)
-            item.needs_review = False
-        else:
-            item.clear_location()
-            item.needs_review = True
+            return data.coords, LocationSource.EXIF_GPS
+        if sidecar is not None and (coords := sidecar.coords()) is not None:
+            return coords, LocationSource.TAKEOUT
+        return None, LocationSource.NONE
 
     def _thumb_ok(self, item: MediaItem, kind: str | None) -> bool:
         if not self.generate_thumbnails:

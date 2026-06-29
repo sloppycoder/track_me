@@ -31,6 +31,32 @@ logger = logging.getLogger(__name__)
 DEFAULT_GEOCODE_RESOLUTION = 9
 
 
+def _pending_query(recalculate: bool) -> Q:
+    """Located items still needing geocoding (or all located, if recalculate)."""
+    query = Q(latitude__isnull=False, longitude__isnull=False)
+    if not recalculate:
+        query &= Q(geocoded_at__isnull=True)
+    return query
+
+
+def estimate_calls(
+    resolutions: list[int], recalculate: bool = False
+) -> tuple[int, dict[int, int]]:
+    """Count distinct H3 cells (= API calls) per resolution, without any API call.
+
+    Returns (pending_item_count, {resolution: distinct_cell_count}).
+    """
+    qs = MediaItem.objects.filter(_pending_query(recalculate))
+    sets: dict[int, set] = {r: set() for r in resolutions}
+    total = 0
+    for it in qs.iterator():
+        total += 1
+        lat, lon = float(it.latitude), float(it.longitude)
+        for r in resolutions:
+            sets[r].add(h3.latlng_to_cell(lat, lon, r))
+    return total, {r: len(s) for r, s in sets.items()}
+
+
 @dataclass
 class GeocodeStats:
     total_items: int = 0
@@ -90,10 +116,7 @@ class Geocoder:
     ) -> GeocodeStats:
         stats = GeocodeStats()
 
-        query = Q(latitude__isnull=False, longitude__isnull=False)
-        if not recalculate:
-            query &= Q(geocoded_at__isnull=True)
-        qs = MediaItem.objects.filter(query)
+        qs = MediaItem.objects.filter(_pending_query(recalculate))
         stats.total_items = qs.count()
         if stats.total_items == 0:
             self.progress("No items to geocode")

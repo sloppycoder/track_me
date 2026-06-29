@@ -55,11 +55,17 @@ def media_to_geojson(items: Iterable[MediaItem]) -> str:
     return json.dumps({"type": "FeatureCollection", "features": features}, indent=2)
 
 
-def located_items(year: int | None = None):
-    """Queryset of items that have both a location and a timestamp, time-ordered."""
-    qs = MediaItem.objects.filter(
-        latitude__isnull=False, longitude__isnull=False, taken_at__isnull=False
-    ).order_by("taken_at")
+def located_items(year: int | None = None) -> list[MediaItem]:
+    """Items with both a location and a timestamp, ordered by absolute time.
+
+    ``year`` filters on the photo's *local* year (via ``local_taken_at``) so a
+    photo taken near midnight abroad lands in the correct year.
+    """
+    items = list(
+        MediaItem.objects.filter(
+            latitude__isnull=False, longitude__isnull=False, taken_at__isnull=False
+        ).order_by("taken_at")
+    )
     if year is not None:
-        qs = qs.filter(taken_at__year=year)
-    return qs
+        items = [it for it in items if (lt := it.local_taken_at) and lt.year == year]
+    return items

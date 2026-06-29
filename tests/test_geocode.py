@@ -3,7 +3,7 @@
 import pytest
 
 from library.models import LocationSource, MediaItem
-from places.geocode import Geocoder
+from places.geocode import Geocoder, estimate_calls
 
 
 def _fake_reverse_geocode(latlng, language=None):
@@ -90,6 +90,18 @@ def test_unlocated_items_ignored(geocoder):
     MediaItem.objects.create(dedupe_key="noloc", file_name="noloc.jpg")
     stats = geocoder.geocode_items(resolution=9)
     assert stats.total_items == 0
+
+
+@pytest.mark.django_db
+def test_estimate_calls_no_api():
+    _make_item("a", 1.30000, 103.80000)
+    _make_item("b", 1.30005, 103.80005)  # ~8 m from a -> same cell at every res here
+    _make_item("c", 35.6800, 139.6900)  # Tokyo, separate
+    total, counts = estimate_calls([6, 9, 10, 11])
+    assert total == 3
+    assert counts[9] == 2  # a+b share a cell, c separate
+    vals = [counts[r] for r in (6, 9, 10, 11)]
+    assert vals == sorted(vals)  # finer resolution -> same or more cells
 
 
 def test_reverse_geocode_parses_country(geocoder):
