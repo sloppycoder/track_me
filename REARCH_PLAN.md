@@ -37,7 +37,7 @@ library/                 # the catalog: media items + ingestion
     exif.py              # EXIF fallback extraction
     pipeline.py          # discover -> merge -> dedupe -> upsert -> thumbnail
   media/
-    thumbnails.py        # eager, content-addressed thumbnail cache
+    thumbnails.py        # opt-in, content-addressed thumbnail cache
   api.py                 # ninja router: list/search/locate
   management/commands/ingest.py
 
@@ -136,7 +136,7 @@ class MediaItem(models.Model):
 ## Phase 1 — Ingestion (the core; highest value)
 
 **Outcome:** point at a Takeout extract → every item gets a timestamp, most get a
-location + Google Photos link, thumbnails cached eagerly.
+location + Google Photos link; thumbnails cached on request (`--thumbnails`).
 
 ### `library/ingest/sidecar.py` (Pydantic)
 ```python
@@ -174,7 +174,7 @@ Per item, merge sources with a clear precedence:
 - **link:** store `google_photos_url`.
 - **identity:** compute `dedupe_key`; upsert (refresh metadata, never clobber a
   `manual` location on re-ingest).
-- **thumbnail:** generate + cache **eagerly** now (see below).
+- **thumbnail:** generate + cache **on request** (`--thumbnails`; see below).
 
 ### `library/media/thumbnails.py` — content-addressed
 - Thumbnail filename keyed by `dedupe_key` (not DB id), so it survives DB resets.
