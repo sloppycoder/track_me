@@ -1,6 +1,6 @@
 # Instructions for coding agents
 
-This project is being re-architected. See **REARCH_PLAN.md** (overall plan,
+This project is being re-architected. See **docs/REARCH_PLAN.md** (overall plan,
 Phases 0–4) and **docs/PHASE_3_UI_PLAN.md** (the UI, on hold). The code lives in
 the `library` and `places` apps. The legacy `myphoto` app has been **deleted**;
 its one reusable piece (smart-search parsing) was salvaged into `library/search.py`.

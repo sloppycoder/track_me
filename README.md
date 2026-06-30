@@ -9,7 +9,7 @@ the local SQLite catalog is the source of truth you keep.
 
 > **Status:** mid re-architecture. The catalog + ingestion + geocoding pipeline
 > (the `library` and `places` apps) is built and working. There is no web UI yet —
-> the spot-check/geotag UI is **on hold** (see `REARCH_PLAN.md` and
+> the spot-check/geotag UI is **on hold** (see `docs/REARCH_PLAN.md` and
 > `docs/PHASE_3_UI_PLAN.md`), so `/` redirects to the API docs. The legacy
 > `myphoto` app has been removed.
 
@@ -84,5 +84,6 @@ ty check .
 ## More
 
 - **`CLAUDE.md`** — working agreement for coding agents (commands, conventions).
-- **`REARCH_PLAN.md`** — the overall rebuild plan (Phases 0–4).
+- **`docs/REARCH_PLAN.md`** — the overall rebuild plan (Phases 0–4).
 - **`docs/PHASE_3_UI_PLAN.md`** — the planned spot-check UI (on hold).
+- **`docs/SIDECAR_CHANGE_DETECTION.md`** — design for detecting re-tagged sidecars on re-import (planned).
