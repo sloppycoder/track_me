@@ -86,8 +86,8 @@ apply this recipe (validated against `data/track_me.db`):
 Output: chronological, **non-overlapping** date ranges; list a place once per
 distinct visit (a revisited city appears multiple times). Ignore photo counts
 unless asked. Day-trips from a base city legitimately appear as their own stays.
-A worked example (two timelines with country + city breakdowns) is in
-`docs/timeline.md`; keep reusable scripts in a scratch/working dir, not committed.
+Keep reusable scripts and any generated timelines in a scratch/working dir — they
+contain personal location history and must not be committed.
 
 ## API
 

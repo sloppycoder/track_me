@@ -41,5 +41,8 @@ assets/css/
 staticfiles/css/
 .playwright-mcp/*
 
+# personal-data analysis artifacts (contain private location history)
+docs/timeline.md
+
 # macOS
 .DS_Store
