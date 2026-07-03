@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -20,24 +21,41 @@ from pathlib import Path
 from track_me import config
 
 
+def _parse_filter(raw: str | None) -> tuple[str, str] | None:
+    """Parse '--filter YYYY-MM[,YYYY-MM]' into an inclusive (lo, hi) month range."""
+    if not raw:
+        return None
+    parts = [p.strip() for p in raw.split(",")]
+    lo, hi = parts[0], parts[-1]  # single value -> that month only
+    for ym in (lo, hi):
+        if not re.fullmatch(r"\d{4}-\d{2}", ym):
+            raise SystemExit(f"--filter expects YYYY-MM[,YYYY-MM]; got '{raw}'")
+    return (min(lo, hi), max(lo, hi))
+
+
 def _cmd_ingest(args: argparse.Namespace) -> None:
     from track_me.ingest.pipeline import IngestPipeline
 
+    date_filter = _parse_filter(args.filter)
     config.ensure_dirs()
     print(f"Ingesting from: {args.directory}")
     if args.force:
         print("Force reprocess enabled")
     if args.thumbnails:
         print("Thumbnails enabled")
+    if date_filter:
+        print(f"Capture-month filter: {date_filter[0]}..{date_filter[1]}")
 
     pipeline = IngestPipeline(progress_callback=print, generate_thumbnails=args.thumbnails)
-    stats = pipeline.ingest_directory(args.directory, force=args.force, limit=args.limit)
+    stats = pipeline.ingest_directory(args.directory, force=args.force, date_filter=date_filter)
 
     print("\n" + "=" * 60)
     print(f"Total media files: {stats.total_files}")
     print(f"Created:  {stats.created}")
     print(f"Updated:  {stats.updated}")
     print(f"Skipped:  {stats.skipped}")
+    if stats.filtered:
+        print(f"Filtered (outside month range): {stats.filtered}")
     print(f"Sidecars matched: {stats.with_sidecar}")
     print(f"Located: {stats.with_location}   No location: {stats.without_location}")
     if stats.errors:
@@ -155,7 +173,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--force", action="store_true", help="Reprocess already-ingested items")
     p_ingest.add_argument("--thumbnails", action="store_true", help="Also generate thumbnails")
     p_ingest.add_argument(
-        "--limit", type=int, help="Process at most N files (subset, e.g. for a quick test run)"
+        "--filter",
+        metavar="YYYY-MM[,YYYY-MM]",
+        help="Only ingest photos taken in this capture-month range (for test runs)",
     )
     p_ingest.set_defaults(func=_cmd_ingest)
 

@@ -154,11 +154,24 @@ def test_thumbnails_optional(db, thumbs_dir, takeout):
     assert stats.skipped == 3
 
 
-def test_limit_processes_only_a_subset(db, thumbs_dir, takeout):
-    stats = _pipeline(db, thumbs_dir).ingest_directory(takeout, limit=2)
-    assert stats.total_files == 2
+def test_filter_selects_capture_month(db, thumbs_dir, takeout):
+    # The two sidecar photos are 2019-08; the orphan's mtime is "now" (out of range).
+    stats = _pipeline(db, thumbs_dir).ingest_directory(
+        takeout, date_filter=("2019-08", "2019-08")
+    )
+    assert stats.total_files == 3  # discovery is unaffected
     assert stats.created == 2
+    assert stats.filtered == 1  # orphan excluded
     assert db.count_media() == 2
+
+
+def test_filter_excludes_everything_out_of_range(db, thumbs_dir, takeout):
+    stats = _pipeline(db, thumbs_dir).ingest_directory(
+        takeout, date_filter=("2010-01", "2010-12")
+    )
+    assert db.count_media() == 0
+    assert stats.filtered == 3
+    assert stats.created == 0
 
 
 def test_idempotent_reingest(db, thumbs_dir, takeout):

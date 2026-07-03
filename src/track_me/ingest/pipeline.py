@@ -35,6 +35,7 @@ class IngestStats:
     created: int = 0
     updated: int = 0
     skipped: int = 0
+    filtered: int = 0
     errors: int = 0
     with_location: int = 0
     without_location: int = 0
@@ -131,17 +132,26 @@ class IngestPipeline:
             cache_dir=thumbnail_cache_dir or config.THUMBNAIL_CACHE_DIR,
             size=thumbnail_size or config.THUMBNAIL_SIZE,
         )
+        self._date_filter: tuple[str, str] | None = None
 
     # --- public API ------------------------------------------------------
     def ingest_directory(
-        self, root: str, *, force: bool = False, limit: int | None = None
+        self,
+        root: str,
+        *,
+        force: bool = False,
+        date_filter: tuple[str, str] | None = None,
     ) -> IngestStats:
+        """Ingest a Takeout extract.
+
+        ``date_filter`` = an inclusive ('YYYY-MM', 'YYYY-MM') capture-month range
+        (UTC); files taken outside it are skipped (counted as ``filtered``).
+        """
+        self._date_filter = date_filter
         stats = IngestStats()
         files = self._discover(root)
-        if limit is not None:
-            files = files[:limit]
         stats.total_files = len(files)
-        suffix = f" (limited to {limit})" if limit is not None else ""
+        suffix = f" (filter {date_filter[0]}..{date_filter[1]})" if date_filter else ""
         self.progress(f"Found {stats.total_files} media files under {root}{suffix}")
 
         for i, path in enumerate(files, start=1):
@@ -155,6 +165,16 @@ class IngestPipeline:
                 self.progress(f"Processed {i}/{stats.total_files}")
 
         return stats
+
+    def _in_filter(self, dt: datetime | None) -> bool:
+        """Whether a capture instant falls inside the ('YYYY-MM','YYYY-MM') range."""
+        if self._date_filter is None:
+            return True
+        if dt is None:
+            return False
+        ym = dt.astimezone(dt_timezone.utc).strftime("%Y-%m")
+        lo, hi = self._date_filter
+        return lo <= ym <= hi
 
     # --- internals -------------------------------------------------------
     def _discover(self, root: str) -> list[Path]:
@@ -180,6 +200,14 @@ class IngestPipeline:
         google_url = sidecar.url if sidecar else None
         title = sidecar.title if sidecar else None
         epoch = sidecar.taken_epoch() if sidecar else None
+
+        # Month filter (cheap path): skip out-of-range sidecar-dated files before
+        # the expensive image decode. Orphans/EXIF-dated files are filtered below,
+        # once their taken_at is resolved.
+        if self._date_filter and epoch is not None:
+            if not self._in_filter(datetime.fromtimestamp(epoch, tz=dt_timezone.utc)):
+                stats.filtered += 1
+                return
 
         # Fast skip: if a sidecar-derived key already maps to a complete item.
         if not force and (google_url or (title and epoch is not None)):
@@ -246,6 +274,12 @@ class IngestPipeline:
             taken_at, time_source = _resolve_taken_at(sidecar, data.datetime_text, path, tz)
             item.taken_at = taken_at
             item.taken_at_source = time_source
+
+        # Month filter for files without a sidecar epoch (EXIF/mtime-dated): now
+        # that taken_at is resolved, drop those outside the range.
+        if self._date_filter and epoch is None and not self._in_filter(item.taken_at):
+            stats.filtered += 1
+            return
 
         # Location (preserve a manual override on re-ingest).
         if not (not created and item.location_source == LocationSource.MANUAL):
