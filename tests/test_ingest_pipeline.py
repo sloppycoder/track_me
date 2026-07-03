@@ -8,7 +8,13 @@ import pytest
 from PIL import Image
 
 from track_me.db import Database, LocationSource, Media, Place, TimeSource
-from track_me.ingest.pipeline import IngestPipeline, _resolve_taken_at, compute_dedupe_key
+from track_me.ingest.pipeline import (
+    IngestPipeline,
+    _dir_year,
+    _filter_years,
+    _resolve_taken_at,
+    compute_dedupe_key,
+)
 
 TOKYO = (35.6895, 139.6917)
 
@@ -167,6 +173,77 @@ def test_filter_excludes_everything_out_of_range(db, thumbs_dir, takeout):
     assert db.count_media() == 0
     assert stats.filtered == 3
     assert stats.created == 0
+
+
+def _pipeline_with_log(db, thumbs_dir, msgs):
+    return IngestPipeline(
+        db,
+        thumbnail_cache_dir=thumbs_dir,
+        thumbnail_size=(100, 100),
+        progress_callback=msgs.append,
+    )
+
+
+def test_year_dir_prefilter_skips_nonmatching_years(db, thumbs_dir, takeout):
+    # Fixture photos live in 'Photos from 2019'. A 2022 filter is outside the
+    # ±1-widened year window {2021,2022,2023}, so the whole folder is dropped by
+    # the zero-I/O directory pre-filter -- no sidecars read.
+    msgs: list[str] = []
+    stats = _pipeline_with_log(db, thumbs_dir, msgs).ingest(
+        takeout, date_filter=("2022-06", "2022-06")
+    )
+    assert stats.created == 0
+    assert stats.filtered == 3
+    assert db.count_media() == 0
+    assert any("Pre-filtered 3" in m for m in msgs)
+
+
+def test_year_dir_prefilter_keeps_adjacent_year(db, thumbs_dir, takeout):
+    # A 2020-01 filter keeps 'Photos from 2019' (±1 window {2019,2020,2021}) so a
+    # New-Year photo mis-shelved by a year isn't wrongly dropped; the real 2019-08
+    # photos are then excluded by the fine-grained month check, not the folder.
+    msgs: list[str] = []
+    stats = _pipeline_with_log(db, thumbs_dir, msgs).ingest(
+        takeout, date_filter=("2020-01", "2020-01")
+    )
+    assert stats.created == 0
+    assert stats.filtered == 3
+    assert not any("Pre-filtered" in m for m in msgs)  # folder kept, excluded by month
+
+
+def test_non_year_folder_always_scanned(db, thumbs_dir, tmp_path):
+    # A folder that isn't 'Photos from YYYY' can't be pre-filtered by year, so it's
+    # always scanned regardless of the requested range.
+    root = tmp_path / "Takeout" / "Google Photos" / "Me"
+    root.mkdir(parents=True)
+    _jpeg(root / "IMG_1.JPG")
+    _sidecar(
+        root / "IMG_1.JPG.json",
+        title="IMG_1.JPG",
+        url="https://photos.google.com/photo/AAA",
+        photoTakenTime={"timestamp": "1564920000"},  # 2019-08-04
+        geoData={"latitude": TOKYO[0], "longitude": TOKYO[1]},
+    )
+    src = str(tmp_path / "Takeout")
+    # Far-off year filter: scanned, then excluded by the fine-grained month check.
+    stats = _pipeline(db, thumbs_dir).ingest(src, date_filter=("2022-06", "2022-06"))
+    assert stats.filtered == 1
+    assert stats.created == 0
+    # Matching month: ingested normally.
+    stats = _pipeline(db, thumbs_dir).ingest(src, date_filter=("2019-08", "2019-08"))
+    assert stats.created == 1
+
+
+def test_filter_years_widens_by_one():
+    assert _filter_years(None) is None
+    assert _filter_years(("2012-03", "2012-03")) == {2011, 2012, 2013}
+    assert _filter_years(("2012-11", "2013-02")) == {2011, 2012, 2013, 2014}
+
+
+def test_dir_year_parses_photos_from():
+    assert _dir_year("Takeout/Google Photos/Photos from 2019") == 2019
+    assert _dir_year("Takeout/Google Photos/Me") is None
+    assert _dir_year("") is None
 
 
 def test_idempotent_reingest(db, thumbs_dir, takeout):

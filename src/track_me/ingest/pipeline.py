@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -84,6 +85,26 @@ def _kind_for(ext: str) -> str | None:
     if ext in exif_mod.VIDEO_EXTENSIONS:
         return MediaKind.VIDEO
     return None
+
+
+_YEAR_DIR_RE = re.compile(r"Photos from (\d{4})$")
+
+
+def _dir_year(directory: str) -> int | None:
+    """Capture year implied by a Google Takeout 'Photos from YYYY' folder, else None."""
+    m = _YEAR_DIR_RE.search(directory)
+    return int(m.group(1)) if m else None
+
+
+def _filter_years(date_filter: tuple[str, str] | None) -> set[int] | None:
+    """Years a 'Photos from YYYY' folder could hold a photo in the capture-month
+    range. Widened by ±1 to absorb UTC/local-day boundary drift. None disables the
+    directory pre-filter (no --filter given)."""
+    if date_filter is None:
+        return None
+    lo = int(date_filter[0][:4])
+    hi = int(date_filter[1][:4])
+    return set(range(lo - 1, hi + 2))
 
 
 def _sha1(parts: list[str]) -> str:
@@ -194,19 +215,37 @@ class IngestPipeline:
         ``date_filter`` = an inclusive ('YYYY-MM','YYYY-MM') capture-month range."""
         self._date_filter = date_filter
         store, prefix = from_uri(source)
+        allowed_years = _filter_years(date_filter)
 
         files_by_dir: dict[str, list[str]] = {}
         media: list[ObjectInfo] = []
+        total_media = 0
+        prefiltered = 0
         for obj in store.list(prefix):
             directory, _, name = obj.key.rpartition("/")
             files_by_dir.setdefault(directory, []).append(name)
-            if _kind_for(os.path.splitext(name)[1].lower()) is not None:
-                media.append(obj)
+            if _kind_for(os.path.splitext(name)[1].lower()) is None:
+                continue
+            total_media += 1
+            # Coarse, zero-I/O pre-filter: a 'Photos from YYYY' folder whose year is
+            # outside the requested range can't hold a matching photo, so drop it
+            # without reading a single sidecar. Non-year folders are always scanned.
+            if allowed_years is not None:
+                year = _dir_year(directory)
+                if year is not None and year not in allowed_years:
+                    prefiltered += 1
+                    continue
+            media.append(obj)
 
         stats = IngestStats()
-        stats.total_files = len(media)
+        stats.total_files = total_media
+        stats.filtered = prefiltered
         suffix = f" (filter {date_filter[0]}..{date_filter[1]})" if date_filter else ""
-        self.progress(f"Found {stats.total_files} media objects under {source}{suffix}")
+        self.progress(f"Found {total_media} media objects under {source}{suffix}")
+        if prefiltered:
+            self.progress(
+                f"Pre-filtered {prefiltered} in non-matching year folders; {len(media)} to scan"
+            )
 
         matcher = SidecarMatcher(store, files_by_dir)
         prev_by_key = self._load_prev()
