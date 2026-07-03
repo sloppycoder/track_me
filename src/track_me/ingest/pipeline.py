@@ -217,10 +217,8 @@ class IngestPipeline:
                 pool.submit(self._resolve, obj, store, matcher, prev_by_key, force)
                 for obj in media
             ]
-            for i, fut in enumerate(as_completed(futures), start=1):
+            for fut in as_completed(futures):
                 self._apply(fut.result(), stats)
-                if i % 500 == 0:
-                    self.progress(f"Processed {i}/{stats.total_files}")
 
         return stats
 
@@ -269,6 +267,9 @@ class IngestPipeline:
             stats.with_location += 1
         else:
             stats.without_location += 1
+        written = stats.created + stats.updated + stats.refreshed
+        if written % 100 == 0:
+            self.progress(f"Inserted {written} photos...")
 
     # --- worker (no DB access) -------------------------------------------
     def _resolve(
