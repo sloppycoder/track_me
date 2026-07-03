@@ -172,8 +172,10 @@ the `place` row, set `geo_cell`. Timeline/export read place names via
    `geocode`/`export`/`timeline` subcommands land as they're rewired. Re-ingest
    the Takeout source into a fresh `data/track_me.db` (old Django DB preserved as
    `data/track_me_legacy.db` for comparison).
-3. **Rewire geocode + export** — fetch/derive + `place` + `geo_cell`; export join.
-   Run `geocode` (small `--max-api-calls` first) to populate `place`.
+3. **Rewire geocode + export** ✅ — fetch/derive + `place` + `geo_cell`; export
+   over `Media`. `track-me geocode`/`export` subcommands; geocode + export_gpx
+   management commands deleted. City derived via priority chain, re-runnable with
+   `--derive-only`. (Real-data `geocode` run happens in the re-ingest pass.)
 4. **CLI + consumers** — single `track-me` entrypoint with subcommands
    `ingest | geocode | export | timeline | serve`, where **`serve` launches the
    Flask viewer** (the viewer folds into the main CLI, not a separate command).
