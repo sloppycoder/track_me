@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS media (
     -- per-photo raw metadata (unique per photo -> inline)
     sidecar_raw         TEXT,               -- JSON
     exif                TEXT,               -- JSON
+    sidecar_fingerprint TEXT,               -- hash of significant sidecar fields (re-tag detection)
 
     -- media handling
     thumbnail_cached_at TEXT,

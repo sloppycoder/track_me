@@ -66,6 +66,7 @@ _MEDIA_COLUMNS = (
     "location_source",
     "sidecar_raw",
     "exif",
+    "sidecar_fingerprint",
     "thumbnail_cached_at",
     "perceptual_hash",
     "needs_review",
@@ -161,6 +162,7 @@ class Media:
 
     sidecar_raw: dict | None = None
     exif: dict | None = None
+    sidecar_fingerprint: str | None = None
 
     thumbnail_cached_at: datetime | None = None
     perceptual_hash: str | None = None
@@ -220,6 +222,7 @@ def _media_to_params(m: Media) -> dict:
         "location_source": m.location_source,
         "sidecar_raw": json.dumps(m.sidecar_raw, ensure_ascii=False) if m.sidecar_raw else None,
         "exif": json.dumps(m.exif, ensure_ascii=False) if m.exif else None,
+        "sidecar_fingerprint": m.sidecar_fingerprint,
         "thumbnail_cached_at": to_iso(m.thumbnail_cached_at),
         "perceptual_hash": m.perceptual_hash,
         "needs_review": int(m.needs_review),
@@ -247,6 +250,7 @@ def _media_from_row(row: sqlite3.Row) -> Media:
         location_source=row["location_source"],
         sidecar_raw=json.loads(row["sidecar_raw"]) if row["sidecar_raw"] else None,
         exif=json.loads(row["exif"]) if row["exif"] else None,
+        sidecar_fingerprint=row["sidecar_fingerprint"],
         thumbnail_cached_at=from_iso(row["thumbnail_cached_at"]),
         perceptual_hash=row["perceptual_hash"],
         needs_review=bool(row["needs_review"]),
