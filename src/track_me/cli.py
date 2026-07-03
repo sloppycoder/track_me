@@ -12,6 +12,7 @@ A single entrypoint over the local SQLite pipeline:
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import re
 import subprocess
@@ -231,6 +232,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    # Line-buffer stdout so progress streams live when piped (e.g. `| tee`),
+    # instead of block-buffering until the process exits.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
     args = build_parser().parse_args(argv)
     args.func(args)
 
