@@ -133,11 +133,16 @@ class IngestPipeline:
         )
 
     # --- public API ------------------------------------------------------
-    def ingest_directory(self, root: str, *, force: bool = False) -> IngestStats:
+    def ingest_directory(
+        self, root: str, *, force: bool = False, limit: int | None = None
+    ) -> IngestStats:
         stats = IngestStats()
         files = self._discover(root)
+        if limit is not None:
+            files = files[:limit]
         stats.total_files = len(files)
-        self.progress(f"Found {stats.total_files} media files under {root}")
+        suffix = f" (limited to {limit})" if limit is not None else ""
+        self.progress(f"Found {stats.total_files} media files under {root}{suffix}")
 
         for i, path in enumerate(files, start=1):
             try:

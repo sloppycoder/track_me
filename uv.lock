@@ -1495,7 +1495,7 @@ wheels = [
 [[package]]
 name = "track-me"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "dateparser" },
     { name = "dj-database-url" },

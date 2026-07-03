@@ -154,6 +154,13 @@ def test_thumbnails_optional(db, thumbs_dir, takeout):
     assert stats.skipped == 3
 
 
+def test_limit_processes_only_a_subset(db, thumbs_dir, takeout):
+    stats = _pipeline(db, thumbs_dir).ingest_directory(takeout, limit=2)
+    assert stats.total_files == 2
+    assert stats.created == 2
+    assert db.count_media() == 2
+
+
 def test_idempotent_reingest(db, thumbs_dir, takeout):
     _pipeline(db, thumbs_dir).ingest_directory(takeout)
     stats = _pipeline(db, thumbs_dir).ingest_directory(takeout)

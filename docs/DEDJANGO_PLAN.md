@@ -166,9 +166,12 @@ the `place` row, set `geo_cell`. Timeline/export read place names via
 
 1. **Foundation** ✅ — `config.py`, `schema.sql`, `db.py` (dataclasses + repo) +
    `tests/test_db.py` (9 tests, passing). Touches no existing code.
-2. **Rewire pipeline** — `ingest` writes the new DB; blobs inline; `local_date`
-   computed. Re-ingest the Takeout source into a fresh `data/track_me.db`
-   (old Django DB preserved as `data/track_me_legacy.db` for comparison).
+2. **Rewire pipeline** ✅ — `ingest` writes the new DB; blobs inline; `local_date`
+   computed. The `track-me` CLI (`ingest` with `--force/--thumbnails/--limit`,
+   plus `serve`) was pulled forward here so re-ingest never touches `manage.py`;
+   `geocode`/`export`/`timeline` subcommands land as they're rewired. Re-ingest
+   the Takeout source into a fresh `data/track_me.db` (old Django DB preserved as
+   `data/track_me_legacy.db` for comparison).
 3. **Rewire geocode + export** — fetch/derive + `place` + `geo_cell`; export join.
    Run `geocode` (small `--max-api-calls` first) to populate `place`.
 4. **CLI + consumers** — single `track-me` entrypoint with subcommands
