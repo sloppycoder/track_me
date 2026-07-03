@@ -38,7 +38,7 @@ def _cmd_ingest(args: argparse.Namespace) -> None:
 
     date_filter = _parse_filter(args.filter)
     config.ensure_dirs()
-    print(f"Ingesting from: {args.directory}")
+    print(f"Ingesting from: {args.source}")
     if args.force:
         print("Force reprocess enabled")
     if args.thumbnails:
@@ -47,13 +47,16 @@ def _cmd_ingest(args: argparse.Namespace) -> None:
         print(f"Capture-month filter: {date_filter[0]}..{date_filter[1]}")
 
     pipeline = IngestPipeline(progress_callback=print, generate_thumbnails=args.thumbnails)
-    stats = pipeline.ingest_directory(args.directory, force=args.force, date_filter=date_filter)
+    stats = pipeline.ingest(
+        args.source, force=args.force, date_filter=date_filter, workers=args.workers
+    )
 
     print("\n" + "=" * 60)
     print(f"Total media files: {stats.total_files}")
-    print(f"Created:  {stats.created}")
-    print(f"Updated:  {stats.updated}")
-    print(f"Skipped:  {stats.skipped}")
+    print(f"Created:   {stats.created}")
+    print(f"Updated:   {stats.updated}")
+    print(f"Refreshed: {stats.refreshed}")
+    print(f"Skipped:   {stats.skipped}")
     if stats.filtered:
         print(f"Filtered (outside month range): {stats.filtered}")
     print(f"Sidecars matched: {stats.with_sidecar}")
@@ -169,13 +172,18 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ingest = sub.add_parser("ingest", help="Ingest a Google Takeout extract")
-    p_ingest.add_argument("directory", help="Takeout extract directory to ingest")
+    p_ingest.add_argument(
+        "source", help="Takeout source: a local directory or an s3://bucket/prefix URI"
+    )
     p_ingest.add_argument("--force", action="store_true", help="Reprocess already-ingested items")
     p_ingest.add_argument("--thumbnails", action="store_true", help="Also generate thumbnails")
     p_ingest.add_argument(
         "--filter",
         metavar="YYYY-MM[,YYYY-MM]",
         help="Only ingest photos taken in this capture-month range (for test runs)",
+    )
+    p_ingest.add_argument(
+        "--workers", type=int, default=32, help="Concurrent read workers (default: 32)"
     )
     p_ingest.set_defaults(func=_cmd_ingest)
 

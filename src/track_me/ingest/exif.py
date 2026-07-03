@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
+from io import BytesIO
 
 import imagehash
 import pillow_heif
@@ -72,13 +72,13 @@ def _parse_coordinate(coordinate) -> float | None:
     return None
 
 
-def _read_meta(path: Path) -> dict:
+def _read_meta(data: bytes) -> dict:
     """Extract EXIF tags (incl. GPS IFD) into a JSON-serializable dict."""
     try:
-        with Image.open(path) as img:
+        with Image.open(BytesIO(data)) as img:
             exif_data = img.getexif()
     except Exception as e:
-        logger.warning("Could not read EXIF from %s: %s", path, e)
+        logger.warning("Could not read EXIF: %s", e)
         return {}
 
     if not exif_data:
@@ -130,23 +130,25 @@ def _datetime_text(meta: dict) -> str | None:
     return None
 
 
-def _perceptual_hash(path: Path) -> str | None:
+def _perceptual_hash(data: bytes) -> str | None:
     try:
-        with Image.open(path) as img:
+        with Image.open(BytesIO(data)) as img:
             return str(imagehash.phash(img))
     except Exception as e:
-        logger.warning("Could not hash %s: %s", path, e)
+        logger.warning("Could not hash image: %s", e)
         return None
 
 
-def read_exif(path: Path, *, with_hash: bool = True) -> ExifData:
-    """Read EXIF metadata, GPS, capture time, and perceptual hash from a file."""
-    meta = _read_meta(path)
+def read_exif(data: bytes, *, with_hash: bool = False) -> ExifData:
+    """Read EXIF metadata, GPS, capture time, and (optionally) perceptual hash
+    from raw image bytes. ``with_hash`` forces a full decode, so leave it off
+    unless the hash is actually needed for identity."""
+    meta = _read_meta(data)
     coords, altitude = _extract_gps(meta)
     return ExifData(
         meta=meta,
         coords=coords,
         altitude=altitude,
         datetime_text=_datetime_text(meta),
-        perceptual_hash=_perceptual_hash(path) if with_hash else None,
+        perceptual_hash=_perceptual_hash(data) if with_hash else None,
     )

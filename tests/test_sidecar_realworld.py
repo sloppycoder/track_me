@@ -49,20 +49,17 @@ def test_located_example_has_coords():
 
 def test_truncated_sidecar_matched_via_title():
     """The 51-char truncated case (the norm in real exports) must still match."""
-    matcher = SidecarMatcher()
-    image = TRUNCATED / "PXL_20250102_042225386-COLLAGE.jpg"
-    sidecar = matcher.find(image)
-    assert sidecar is not None
-    assert sidecar.name == "PXL_20250102_042225386-COLLAGE.jpg.supplementa.json"
+    matcher = SidecarMatcher.for_local(TRUNCATED)
+    found = matcher.find("PXL_20250102_042225386-COLLAGE.jpg")
+    assert found == "PXL_20250102_042225386-COLLAGE.jpg.supplementa.json"
     # And it parses to a usable location.
-    sc = load_sidecar(sidecar)
+    sc = load_sidecar(TRUNCATED / found)
     assert sc is not None and sc.coords() is not None
 
 
 @pytest.mark.parametrize("name", ["DSCN0472.JPG", "DSCN0473.JPG", "DSCN0474.JPG"])
 def test_full_supplemental_naming_matches(name):
-    matcher = SidecarMatcher()
     # The 2003 fixtures use full `.supplemental-metadata.json` naming.
-    found = matcher.find(SIDECARS / name)
-    assert found is not None
-    assert found.name == f"{name}.supplemental-metadata.json"
+    matcher = SidecarMatcher.for_local(SIDECARS)
+    found = matcher.find(name)
+    assert found == f"{name}.supplemental-metadata.json"

@@ -3,12 +3,11 @@
 import json
 from datetime import datetime
 from datetime import timezone as dt_timezone
-from pathlib import Path
 
 import pytest
 from PIL import Image
 
-from track_me.db import Database, LocationSource, Media, TimeSource
+from track_me.db import Database, LocationSource, Media, Place, TimeSource
 from track_me.ingest.pipeline import IngestPipeline, _resolve_taken_at, compute_dedupe_key
 
 TOKYO = (35.6895, 139.6917)
@@ -91,14 +90,14 @@ def takeout(tmp_path):
 
 
 def test_ingest_creates_items(db, thumbs_dir, takeout):
-    stats = _pipeline(db, thumbs_dir).ingest_directory(takeout)
+    stats = _pipeline(db, thumbs_dir).ingest(takeout)
     assert stats.total_files == 3
     assert stats.created == 3
     assert db.count_media() == 3
 
 
 def test_located_photo(db, thumbs_dir, takeout):
-    _pipeline(db, thumbs_dir).ingest_directory(takeout)
+    _pipeline(db, thumbs_dir).ingest(takeout)
     item = _by_name(db, "IMG_1.JPG")
     assert item.has_location
     assert item.location_source == LocationSource.TAKEOUT
@@ -112,7 +111,7 @@ def test_located_photo(db, thumbs_dir, takeout):
 
 
 def test_sidecar_without_location_still_has_time_and_link(db, thumbs_dir, takeout):
-    _pipeline(db, thumbs_dir).ingest_directory(takeout)
+    _pipeline(db, thumbs_dir).ingest(takeout)
     item = _by_name(db, "IMG_2.JPG")
     assert not item.has_location
     assert item.location_source == LocationSource.NONE
@@ -124,7 +123,7 @@ def test_sidecar_without_location_still_has_time_and_link(db, thumbs_dir, takeou
 
 
 def test_orphan_photo_gets_mtime(db, thumbs_dir, takeout):
-    _pipeline(db, thumbs_dir).ingest_directory(takeout)
+    _pipeline(db, thumbs_dir).ingest(takeout)
     item = _by_name(db, "IMG_3.JPG")
     assert item.taken_at is not None
     assert item.taken_at_source == TimeSource.FILE_MTIME
@@ -133,7 +132,7 @@ def test_orphan_photo_gets_mtime(db, thumbs_dir, takeout):
 
 def test_thumbnails_cached_eagerly(db, thumbs_dir, takeout):
     pipeline = _pipeline(db, thumbs_dir, generate_thumbnails=True)  # opt-in
-    pipeline.ingest_directory(takeout)
+    pipeline.ingest(takeout)
     for item in _all(db):
         assert item.thumbnail_cached_at is not None
         assert pipeline.thumbnails.exists(item.dedupe_key)
@@ -141,7 +140,7 @@ def test_thumbnails_cached_eagerly(db, thumbs_dir, takeout):
 
 def test_thumbnails_optional(db, thumbs_dir, takeout):
     pipeline = _pipeline(db, thumbs_dir, generate_thumbnails=False)
-    pipeline.ingest_directory(takeout)
+    pipeline.ingest(takeout)
     # Items still fully ingested (time + location), just no thumbnails.
     assert db.count_media() == 3
     located = _by_name(db, "IMG_1.JPG")
@@ -150,15 +149,13 @@ def test_thumbnails_optional(db, thumbs_dir, takeout):
         assert item.thumbnail_cached_at is None
         assert not pipeline.thumbnails.exists(item.dedupe_key)
     # And re-ingest still skips (completeness doesn't require a thumbnail here).
-    stats = _pipeline(db, thumbs_dir, generate_thumbnails=False).ingest_directory(takeout)
+    stats = _pipeline(db, thumbs_dir, generate_thumbnails=False).ingest(takeout)
     assert stats.skipped == 3
 
 
 def test_filter_selects_capture_month(db, thumbs_dir, takeout):
     # The two sidecar photos are 2019-08; the orphan's mtime is "now" (out of range).
-    stats = _pipeline(db, thumbs_dir).ingest_directory(
-        takeout, date_filter=("2019-08", "2019-08")
-    )
+    stats = _pipeline(db, thumbs_dir).ingest(takeout, date_filter=("2019-08", "2019-08"))
     assert stats.total_files == 3  # discovery is unaffected
     assert stats.created == 2
     assert stats.filtered == 1  # orphan excluded
@@ -166,44 +163,99 @@ def test_filter_selects_capture_month(db, thumbs_dir, takeout):
 
 
 def test_filter_excludes_everything_out_of_range(db, thumbs_dir, takeout):
-    stats = _pipeline(db, thumbs_dir).ingest_directory(
-        takeout, date_filter=("2010-01", "2010-12")
-    )
+    stats = _pipeline(db, thumbs_dir).ingest(takeout, date_filter=("2010-01", "2010-12"))
     assert db.count_media() == 0
     assert stats.filtered == 3
     assert stats.created == 0
 
 
 def test_idempotent_reingest(db, thumbs_dir, takeout):
-    _pipeline(db, thumbs_dir).ingest_directory(takeout)
-    stats = _pipeline(db, thumbs_dir).ingest_directory(takeout)
+    _pipeline(db, thumbs_dir).ingest(takeout)
+    stats = _pipeline(db, thumbs_dir).ingest(takeout)
     assert db.count_media() == 3
     assert stats.created == 0
     assert stats.skipped == 3
 
 
 def test_manual_location_preserved_on_reingest(db, thumbs_dir, takeout):
-    _pipeline(db, thumbs_dir).ingest_directory(takeout)
+    _pipeline(db, thumbs_dir).ingest(takeout)
     item = _by_name(db, "IMG_2.JPG")
     item.set_location(1.29, 103.85, source=LocationSource.MANUAL)
     item.needs_review = False
     db.upsert_media(item)
 
-    _pipeline(db, thumbs_dir).ingest_directory(takeout, force=True)
+    _pipeline(db, thumbs_dir).ingest(takeout, force=True)
     item = _by_name(db, "IMG_2.JPG")
     assert item.location_source == LocationSource.MANUAL
     assert item.latitude == pytest.approx(1.29)
 
 
+def test_retagged_sidecar_is_refreshed_not_skipped(db, thumbs_dir, tmp_path):
+    root = tmp_path / "T"
+    root.mkdir()
+    _jpeg(root / "P.JPG")
+    _sidecar(  # imported untagged (no geoData)
+        root / "P.JPG.json",
+        title="P.JPG",
+        url="https://photos.google.com/photo/P",
+        photoTakenTime={"timestamp": "1564920000"},
+    )
+    _pipeline(db, thumbs_dir).ingest(str(root))
+    assert not _by_name(db, "P.JPG").has_location
+
+    # user tags location in Google Photos, re-exports -> sidecar now has geoData
+    _sidecar(
+        root / "P.JPG.json",
+        title="P.JPG",
+        url="https://photos.google.com/photo/P",
+        photoTakenTime={"timestamp": "1564920000"},
+        geoData={"latitude": 48.857, "longitude": 2.352},
+    )
+    stats = _pipeline(db, thumbs_dir).ingest(str(root))
+    assert stats.refreshed == 1
+    assert stats.skipped == 0
+    item = _by_name(db, "P.JPG")
+    assert item.has_location and item.location_source == LocationSource.TAKEOUT
+
+
+def test_moved_coords_invalidate_geocell(db, thumbs_dir, tmp_path):
+    root = tmp_path / "T"
+    root.mkdir()
+    _jpeg(root / "M.JPG")
+    _sidecar(
+        root / "M.JPG.json",
+        title="M.JPG",
+        url="https://photos.google.com/photo/M",
+        photoTakenTime={"timestamp": "1564920000"},
+        geoData={"latitude": 48.857, "longitude": 2.352},
+    )
+    _pipeline(db, thumbs_dir).ingest(str(root))
+    item = _by_name(db, "M.JPG")
+    # pretend geocode linked it to a place cell
+    db.upsert_place(Place(h3_cell="cellX", country_code="FR"))
+    db.set_geo_cell(item.dedupe_key, "cellX")
+
+    # location moved to Madrid -> different h3 cell -> geo_cell must be invalidated
+    _sidecar(
+        root / "M.JPG.json",
+        title="M.JPG",
+        url="https://photos.google.com/photo/M",
+        photoTakenTime={"timestamp": "1564920000"},
+        geoData={"latitude": 40.4168, "longitude": -3.7038},
+    )
+    _pipeline(db, thumbs_dir).ingest(str(root))
+    assert _by_name(db, "M.JPG").geo_cell is None  # re-queued for geocode
+
+
 def test_exif_time_localized_with_tz():
     # 14:30 JST (Asia/Tokyo, UTC+9) -> 05:30 UTC
-    dt, src = _resolve_taken_at(None, "2019:08:04 14:30:00", Path("/no/such"), tz="Asia/Tokyo")
+    dt, src = _resolve_taken_at(None, "2019:08:04 14:30:00", None, tz="Asia/Tokyo")
     assert src == TimeSource.EXIF
     assert dt == datetime(2019, 8, 4, 5, 30, tzinfo=dt_timezone.utc)
 
 
 def test_exif_time_utc_fallback_without_tz():
-    dt, src = _resolve_taken_at(None, "2019:08:04 14:30:00", Path("/no/such"), tz=None)
+    dt, src = _resolve_taken_at(None, "2019:08:04 14:30:00", None, tz=None)
     assert dt == datetime(2019, 8, 4, 14, 30, tzinfo=dt_timezone.utc)
 
 

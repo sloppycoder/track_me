@@ -17,6 +17,8 @@ import json
 import logging
 import os
 import re
+import threading
+from collections import defaultdict
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -102,57 +104,48 @@ def _implied_image_key(json_name: str) -> tuple[str, int | None]:
 
 
 class _DirIndex:
-    """Cached view of one album directory's sidecar files."""
+    """Cached view of one album directory's sidecar files, built from the object
+    listing + sidecar content read through the store (via ``matcher``)."""
 
-    def __init__(self, directory: Path):
+    def __init__(self, directory: str, names: list[str], matcher: SidecarMatcher):
         self.directory = directory
-        # lowercased json filename -> actual path
-        self.by_name: dict[str, Path] = {}
-        # normalized sidecar 'title' -> list of (counter, path)
-        self.by_title: dict[str, list[tuple[int, Path]]] = {}
-        # (implied image key, counter, path) for prefix fallback
-        self.implied: list[tuple[str, int | None, Path]] = []
+        self.matcher = matcher
+        # lowercased json filename -> object key
+        self.by_name: dict[str, str] = {}
+        # normalized sidecar 'title' -> list of (counter, key)
+        self.by_title: dict[str, list[tuple[int, str]]] = {}
+        # (implied image key, counter, key) for prefix fallback
+        self.implied: list[tuple[str, int | None, str]] = []
         # lowercased names of non-json (image/video) siblings, for uniqueness
         self.media_names: list[str] = []
-        self._build()
+        self._build(names)
 
-    def _build(self) -> None:
-        try:
-            entries = list(os.scandir(self.directory))
-        except OSError:
-            return
-        for entry in entries:
-            if not entry.is_file():
+    def _key(self, name: str) -> str:
+        return f"{self.directory}/{name}" if self.directory else name
+
+    def _build(self, names: list[str]) -> None:
+        for name in names:
+            if not name.lower().endswith(".json"):
+                self.media_names.append(name.lower())
                 continue
-            if not entry.name.lower().endswith(".json"):
-                self.media_names.append(entry.name.lower())
-                continue
-            path = Path(entry.path)
-            self.by_name[entry.name.lower()] = path
-            ikey, counter = _implied_image_key(entry.name)
-            self.implied.append((ikey, counter, path))
-            title = self._read_title(path)
-            if title:
-                _, jcounter = _split_counter(os.path.splitext(entry.name[:-5])[0])
-                key = title.lower()
-                self.by_title.setdefault(key, []).append((jcounter or 0, path))
+            key = self._key(name)
+            self.by_name[name.lower()] = key
+            ikey, counter = _implied_image_key(name)
+            self.implied.append((ikey, counter, key))
+            data = self.matcher.read_json(key)
+            title = data.get("title") if isinstance(data, dict) else None
+            if isinstance(title, str) and title:
+                _, jcounter = _split_counter(os.path.splitext(name[:-5])[0])
+                tkey = title.lower()
+                self.by_title.setdefault(tkey, []).append((jcounter or 0, key))
                 stem_key = os.path.splitext(title)[0].lower()
-                if stem_key != key:
-                    self.by_title.setdefault(stem_key, []).append((jcounter or 0, path))
+                if stem_key != tkey:
+                    self.by_title.setdefault(stem_key, []).append((jcounter or 0, key))
         for entries_list in self.by_title.values():
             entries_list.sort(key=lambda t: t[0])
 
-    @staticmethod
-    def _read_title(path: Path) -> str | None:
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return None
-        title = data.get("title") if isinstance(data, dict) else None
-        return title if isinstance(title, str) and title else None
-
     # --- matching tiers --------------------------------------------------
-    def match(self, image_name: str) -> Path | None:
+    def match(self, image_name: str) -> str | None:
         # Tier A: exact candidate filenames.
         for name in (image_name, _strip_edited(image_name)):
             if name is None:
@@ -182,7 +175,7 @@ class _DirIndex:
         # Tier C: truncation-tolerant prefix match (last resort, conservative).
         return self._match_prefix(image_name)
 
-    def _match_title(self, key: str, counter: int | None) -> Path | None:
+    def _match_title(self, key: str, counter: int | None) -> str | None:
         entries = self.by_title.get(key)
         if not entries:
             return None
@@ -198,9 +191,9 @@ class _DirIndex:
                 return path
         return None
 
-    def _match_prefix(self, image_name: str) -> Path | None:
+    def _match_prefix(self, image_name: str) -> str | None:
         target = (_strip_edited(image_name) or image_name).lower()
-        candidates: list[tuple[int, Path]] = []
+        candidates: list[tuple[int, str]] = []
         for ikey, _counter, path in self.implied:
             if not ikey:
                 continue
@@ -223,15 +216,58 @@ class _DirIndex:
 
 
 class SidecarMatcher:
-    """Finds the sidecar for an image, caching per-directory indexes."""
+    """Finds the sidecar (object key) for an image key.
 
-    def __init__(self) -> None:
-        self._cache: dict[Path, _DirIndex] = {}
+    Driven by an ``ObjectStore`` + a directory->filenames map from the listing.
+    Per-directory indexes and parsed sidecars are built lazily and cached; a
+    per-directory lock makes it safe to call ``find`` from many threads.
+    """
 
-    def find(self, image_path: Path) -> Path | None:
-        directory = image_path.parent
-        index = self._cache.get(directory)
-        if index is None:
-            index = _DirIndex(directory)
-            self._cache[directory] = index
-        return index.match(image_path.name)
+    def __init__(self, store, files_by_dir: dict[str, list[str]]):
+        self.store = store
+        self.files_by_dir = files_by_dir
+        self._indexes: dict[str, _DirIndex] = {}
+        self._index_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
+        self._parsed: dict[str, dict | None] = {}
+        self._parsed_lock = threading.Lock()
+
+    @classmethod
+    def for_local(cls, root: str | Path) -> SidecarMatcher:
+        """Convenience: build a matcher over a local directory tree."""
+        from track_me.storage import LocalStore
+
+        store = LocalStore(root)
+        files_by_dir: dict[str, list[str]] = defaultdict(list)
+        for obj in store.list():
+            directory, _, name = obj.key.rpartition("/")
+            files_by_dir[directory].append(name)
+        return cls(store, dict(files_by_dir))
+
+    def read_json(self, key: str) -> dict | None:
+        """Read + parse a sidecar's JSON, cached (each sidecar read once)."""
+        with self._parsed_lock:
+            if key in self._parsed:
+                return self._parsed[key]
+        try:
+            raw = json.loads(self.store.read(key))
+            data = raw if isinstance(raw, dict) else None
+        except Exception:
+            data = None
+        with self._parsed_lock:
+            self._parsed[key] = data
+        return data
+
+    def _index(self, directory: str) -> _DirIndex:
+        index = self._indexes.get(directory)
+        if index is not None:
+            return index
+        with self._index_locks[directory]:
+            index = self._indexes.get(directory)
+            if index is None:
+                index = _DirIndex(directory, self.files_by_dir.get(directory, []), self)
+                self._indexes[directory] = index
+        return index
+
+    def find(self, image_key: str) -> str | None:
+        directory, _, name = image_key.rpartition("/")
+        return self._index(directory).match(name)

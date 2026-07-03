@@ -9,6 +9,7 @@ deep link.
 from __future__ import annotations
 
 import logging
+from io import BytesIO
 from pathlib import Path
 
 import pillow_heif
@@ -47,6 +48,23 @@ class ThumbnailService:
                 img.save(dest, "JPEG", quality=85, optimize=True)
         except Exception as e:
             logger.warning("Thumbnail failed for %s: %s", source_path, e)
+            return None
+        return dest
+
+    def generate_from_bytes(
+        self, data: bytes, dedupe_key: str, *, force: bool = False
+    ) -> Path | None:
+        """Create (or reuse) the cached thumbnail from raw image bytes."""
+        dest = self.path_for(dedupe_key)
+        if dest.exists() and not force:
+            return dest
+        try:
+            with Image.open(BytesIO(data)) as img:
+                img = self._flatten(img)
+                img.thumbnail(self.size, Image.Resampling.LANCZOS)
+                img.save(dest, "JPEG", quality=85, optimize=True)
+        except Exception as e:
+            logger.warning("Thumbnail failed for %s: %s", dedupe_key, e)
             return None
         return dest
 

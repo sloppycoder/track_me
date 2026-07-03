@@ -79,17 +79,22 @@ class Sidecar(BaseModel):
         return None
 
 
-def load_sidecar(path: Path) -> Sidecar | None:
-    """Read and validate a sidecar JSON file. Returns None on any failure."""
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as e:
-        logger.warning("Could not read sidecar %s: %s", path, e)
-        return None
+def parse_sidecar(raw: dict | None) -> Sidecar | None:
+    """Validate an already-parsed sidecar dict. Returns None on any failure."""
     if not isinstance(raw, dict):
         return None
     try:
         return Sidecar.model_validate(raw)
     except Exception as e:  # pydantic ValidationError or unexpected shape
-        logger.warning("Could not parse sidecar %s: %s", path, e)
+        logger.warning("Could not parse sidecar: %s", e)
         return None
+
+
+def load_sidecar(path: Path) -> Sidecar | None:
+    """Read and validate a sidecar JSON file. Returns None on any failure."""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        logger.warning("Could not read sidecar %s: %s", path, e)
+        return None
+    return parse_sidecar(raw)
