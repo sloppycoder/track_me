@@ -1,0 +1,43 @@
+"""Configuration for the Django-free track_me tool.
+
+Reads ``.env`` (via python-dotenv) into plain module constants. Replaces
+``track_me/settings.py``; no Django, no cloud/deploy keys.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(dotenv_path=BASE_DIR / ".env")
+
+# --- state roots ---------------------------------------------------------
+# data/ holds only the SQLite db; userdata/ holds all generated output
+# (timelines + thumbnails) and is gitignored.
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
+USERDATA_DIR = Path(os.getenv("USERDATA_DIR", str(BASE_DIR / "userdata")))
+
+DB_PATH = Path(os.getenv("DB_PATH", str(DATA_DIR / "track_me.db")))
+# Preserved copy of the old Django DB, kept for the old-vs-new comparison.
+LEGACY_DB_PATH = Path(os.getenv("LEGACY_DB_PATH", str(DATA_DIR / "track_me_legacy.db")))
+
+# --- generated output ----------------------------------------------------
+THUMBNAIL_CACHE_DIR = Path(os.getenv("THUMBNAIL_CACHE_DIR", str(USERDATA_DIR / "thumbnails")))
+THUMBNAIL_SIZE = (
+    int(os.getenv("THUMBNAIL_WIDTH", "300")),
+    int(os.getenv("THUMBNAIL_HEIGHT", "200")),
+)
+TIMELINES_DIR = Path(os.getenv("TIMELINES_DIR", str(USERDATA_DIR / "timelines")))
+
+# --- ingest / geocode ----------------------------------------------------
+PHOTOS_BASE_DIR = Path(os.path.expanduser(os.getenv("PHOTOS_BASE_DIR", "~/tmp")))
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+
+
+def ensure_dirs() -> None:
+    """Create the state/output directories if missing (call before writing)."""
+    for d in (DATA_DIR, THUMBNAIL_CACHE_DIR, TIMELINES_DIR):
+        d.mkdir(parents=True, exist_ok=True)
