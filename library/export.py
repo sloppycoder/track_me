@@ -1,8 +1,8 @@
 """Export located media as timestamped points for timeline tools.
 
-GeoPulse and Dawarich both import GPX (and GeoJSON). Each located ``MediaItem``
-becomes one timestamped point, ordered by capture time, so their stay/trip
-detection can run over your photo-derived "track".
+GeoPulse and Dawarich both import GPX (and GeoJSON). Each located photo becomes
+one timestamped point, ordered by capture time, so their stay/trip detection can
+run over your photo-derived "track".
 """
 
 from __future__ import annotations
@@ -11,14 +11,14 @@ import json
 from datetime import timezone as dt_timezone
 from typing import Iterable
 
-from library.models import MediaItem
+from track_me.db import Database, Media
 
 
 def _utc(dt) -> str:
     return dt.astimezone(dt_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def media_to_gpx(items: Iterable[MediaItem]) -> str:
+def media_to_gpx(items: Iterable[Media]) -> str:
     """Render items as a GPX 1.1 track of timestamped points."""
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -34,19 +34,19 @@ def media_to_gpx(items: Iterable[MediaItem]) -> str:
     return "\n".join(lines)
 
 
-def media_to_geojson(items: Iterable[MediaItem]) -> str:
+def media_to_geojson(items: Iterable[Media]) -> str:
     """Render items as a GeoJSON FeatureCollection of timestamped points."""
     features = [
         {
             "type": "Feature",
             "geometry": {
                 "type": "Point",
-                # GeoJSON is [longitude, latitude]
-                "coordinates": [float(it.longitude), float(it.latitude)],
+                # GeoJSON is [longitude, latitude]; coords are REAL (already float)
+                "coordinates": [it.longitude, it.latitude],
             },
             "properties": {
                 "time": _utc(it.taken_at),
-                "id": it.pk,
+                "id": it.id,
                 "name": it.file_name,
             },
         }
@@ -55,17 +55,10 @@ def media_to_geojson(items: Iterable[MediaItem]) -> str:
     return json.dumps({"type": "FeatureCollection", "features": features}, indent=2)
 
 
-def located_items(year: int | None = None) -> list[MediaItem]:
-    """Items with both a location and a timestamp, ordered by absolute time.
+def located_items(db: Database, year: int | None = None) -> list[Media]:
+    """Located items with a timestamp, ordered by absolute time.
 
-    ``year`` filters on the photo's *local* year (via ``local_taken_at``) so a
-    photo taken near midnight abroad lands in the correct year.
+    ``year`` filters on the photo's LOCAL year (via ``local_date``) so a photo
+    taken near midnight abroad lands in the correct year.
     """
-    items = list(
-        MediaItem.objects.filter(
-            latitude__isnull=False, longitude__isnull=False, taken_at__isnull=False
-        ).order_by("taken_at")
-    )
-    if year is not None:
-        items = [it for it in items if (lt := it.local_taken_at) and lt.year == year]
-    return items
+    return db.iter_located(year=year)

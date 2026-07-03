@@ -349,6 +349,15 @@ class Database:
         )
         self.conn.commit()
 
+    def set_geo_cells(self, updates: list[tuple[str, str]]) -> None:
+        """Bulk-set media.geo_cell from (dedupe_key, geo_cell) pairs, one commit."""
+        ts = to_iso(now_utc())
+        self.conn.executemany(
+            "UPDATE media SET geo_cell = ?, updated_at = ? WHERE dedupe_key = ?",
+            [(cell, ts, key) for key, cell in updates],
+        )
+        self.conn.commit()
+
     def iter_located(self, year: int | None = None) -> list[Media]:
         """Located items with a timestamp, ordered by absolute UTC time.
 
