@@ -1,10 +1,10 @@
-"""Unit tests for the smart-search parser (library.search).
+"""Unit tests for the smart-search parser (track_me.search).
 
 Ported from the legacy ``tests/test_smart_search.py`` parser tests; the old API
 integration tests were dropped with the ``myphoto`` app.
 """
 
-from library.search import parse_smart_search
+from track_me.search import parse_smart_search
 
 
 class TestSmartSearchParser:

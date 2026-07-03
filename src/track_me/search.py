@@ -10,10 +10,9 @@ build a ``MediaItem`` query on top of the returned dict.
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import datetime
+from datetime import UTC, datetime
 
 import dateparser
-from django.utils import timezone
 
 # Month-name fragments that hint a token is a date rather than location text.
 _MONTHS = (
@@ -65,22 +64,22 @@ def parse_date_filter(date_str: str) -> tuple[datetime | None, datetime | None]:
     # Year-only, e.g. "2004" -> whole year.
     if date_str.isdigit() and len(date_str) == 4:
         year = int(date_str)
-        start = timezone.make_aware(datetime(year, 1, 1))
-        end = timezone.make_aware(datetime(year, 12, 31, 23, 59, 59))
+        start = datetime(year, 1, 1, tzinfo=UTC)
+        end = datetime(year, 12, 31, 23, 59, 59, tzinfo=UTC)
         return start, end
 
     # Month + year, e.g. "jan 2004" -> whole month.
     parts = date_str.lower().split()
     if len(parts) == 2 and parts[1].isdigit():
         year, month = parsed_date.year, parsed_date.month
-        start = timezone.make_aware(datetime(year, month, 1))
+        start = datetime(year, month, 1, tzinfo=UTC)
         last_day = monthrange(year, month)[1]
-        end = timezone.make_aware(datetime(year, month, last_day, 23, 59, 59))
+        end = datetime(year, month, last_day, 23, 59, 59, tzinfo=UTC)
         return start, end
 
     # Specific date -> start-of-day .. end-of-day.
-    start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+    start = parsed_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=UTC)
+    end = parsed_date.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=UTC)
     return start, end
 
 

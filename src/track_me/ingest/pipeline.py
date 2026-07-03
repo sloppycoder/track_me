@@ -18,13 +18,13 @@ from datetime import datetime
 from datetime import timezone as dt_timezone
 from pathlib import Path
 
-from library.ingest import exif as exif_mod
-from library.ingest.matcher import SidecarMatcher
-from library.ingest.sidecar import Sidecar, load_sidecar
-from library.media.thumbnails import ThumbnailService
-from library.tz import timezone_for as tz_for
 from track_me import config
 from track_me.db import Database, LocationSource, Media, MediaKind, TimeSource, now_utc
+from track_me.ingest import exif as exif_mod
+from track_me.ingest.matcher import SidecarMatcher
+from track_me.ingest.sidecar import Sidecar, load_sidecar
+from track_me.thumbnails import ThumbnailService
+from track_me.tz import timezone_for as tz_for
 
 logger = logging.getLogger(__name__)
 

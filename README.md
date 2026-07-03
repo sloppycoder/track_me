@@ -1,77 +1,73 @@
 # track_me
 
 A local-first tool that turns **Google Takeout** photo exports into a clean,
-queryable travel timeline. It parses each photo's Takeout sidecar JSON (plus EXIF)
-for an authoritative timestamp and location, reverse-geocodes coordinates into
-place names, and keeps a deep link back to the original on Google Photos. The
-Takeout extract itself is treated as transient — everything is re-derivable, so
-the local SQLite catalog is the source of truth you keep.
-
-> **Status:** mid re-architecture. The catalog + ingestion + geocoding pipeline
-> (the `library` and `places` apps) is built and working. There is no web UI yet —
-> the spot-check/geotag UI is **on hold** (see `docs/REARCH_PLAN.md` and
-> `docs/PHASE_3_UI_PLAN.md`), so `/` redirects to the API docs. The legacy
-> `myphoto` app has been removed.
+queryable travel timeline, then visualizes it on **Google Maps**. It parses each
+photo's Takeout sidecar JSON (plus EXIF) for an authoritative timestamp and
+location, reverse-geocodes coordinates into place names, and keeps a deep link
+back to the original on Google Photos. The Takeout extract is treated as
+transient — everything is re-derivable, so the local SQLite catalog is the source
+of truth you keep.
 
 ## Stack
 
 | Tool | Purpose |
 | --- | --- |
-| [Django](https://www.djangoproject.com/) 5 | app framework, ORM, management commands |
-| [django-ninja](https://django-ninja.dev/) + Pydantic | typed API at `/api` (auto docs at `/api/docs`) |
-| [SQLite](https://www.sqlite.org/) (local-first) | catalog at `data/track_me.db`; Postgres via `DATABASE_URL` |
+| Python 3.12 + stdlib `sqlite3` | catalog + data layer (no ORM) |
+| [Flask](https://flask.palletsprojects.com/) | the Google Maps timeline viewer |
 | [H3](https://h3geo.org/) | spatial cells for batched geocoding + clustering |
+| Google Maps API | reverse geocoding + the map viewer |
 | [uv](https://docs.astral.sh/uv/) | dependency + virtualenv management |
-| [ruff](https://docs.astral.sh/ruff/) | lint + format |
-| [ty](https://github.com/astral-sh/ty) | type checking (**not** pyright) |
+| [ruff](https://docs.astral.sh/ruff/) / [ty](https://github.com/astral-sh/ty) | lint + format / type checking |
 
-Requires **Python 3.12+**.
+Requires **Python 3.12+**. Not Django; not a web app — a CLI plus a tiny local
+viewer. All code lives under `src/track_me/`.
 
 ## Setup
 
 ```shell
-uv sync                                   # create venv + install deps
-echo "GOOGLE_MAPS_API_KEY=..." > .env     # only needed for the geocode step
-python manage.py migrate                  # create the fresh schema (data/track_me.db)
+uv sync                                   # create venv + install deps (+ the `track-me` CLI)
+echo "GOOGLE_MAPS_API_KEY=..." > .env     # needed for the geocode step + the viewer
 ```
 
-The `data/` directory (SQLite db + optional thumbnails) is auto-created at startup
-and gitignored.
+Local state (SQLite DB, thumbnails, timelines) lives under `userdata/` and is
+gitignored. The schema is created automatically on first use — no migrations.
 
 ## The pipeline
 
 ```shell
-# 1. INGEST a Takeout extract: parse sidecars + EXIF, set taken_at for every item,
-#    resolve location, store the Google Photos link, derive a local timezone.
-#    Thumbnails are opt-in (--thumbnails); the timeline doesn't need them.
-python manage.py ingest /path/to/takeout-extract [--thumbnails] [--reprocess]
+# 1. INGEST a Takeout extract: parse sidecars + EXIF, set taken_at + local_date +
+#    timezone for every item, resolve location, store the Google Photos link.
+track-me ingest /path/to/takeout-extract [--thumbnails] [--force] [--limit N]
 
-# 2. GEOCODE located items into place names + country codes (H3-batched, Google API).
-python manage.py geocode [--resolution 9] [--max-api-calls N] [--recalculate]
-python manage.py geocode --estimate        # count API calls / cost without calling
+# 2. GEOCODE located items into place names (H3-batched Google calls). Fetch stores
+#    the raw response; derive picks city/admin1 offline (re-runnable, free).
+track-me geocode [--resolution 9] [--max-api-calls N] [--recalculate]
+track-me geocode --estimate       # count API calls / cost without calling
+track-me geocode --derive-only    # recompute city/admin1 from stored responses
 
-# 3. EXPORT located media as a timestamped track for timeline tools.
-python manage.py export_gpx [--format gpx|geojson] [--year YYYY] [--output FILE]
+# 3. EXPORT located media as a timestamped track for other timeline tools.
+track-me export [--format gpx|geojson] [--year YYYY] [--output FILE]
 ```
 
 `ingest` and `geocode` are **re-runnable and incremental**: already-seen items
-(matched by `MediaItem.dedupe_key`) are skipped, and manual edits are never
-overwritten.
+(matched by `dedupe_key`) are skipped and manual edits are never overwritten.
 
-## Development server
-
-Tailwind CSS must be compiled before serving (the UI is broken without it):
+## Build & view a travel timeline
 
 ```shell
-python manage.py tailwind build           # compile once
-python manage.py tailwind runserver       # compile + watch + runserver
+# Build a timeline (preview; --write persists to userdata/timelines/<id>.json).
+track-me timeline --start 2019-01-01 --end 2020-01-01 --level country
+track-me timeline --start 2019-01-01 --end 2020-01-01 --level country \
+    --write --id countries-2019 --title "Countries visited in 2019"
+
+# Launch the Google Maps viewer at http://localhost:5000.
+track-me serve
 ```
 
-- API docs (auto-generated): http://localhost:8000/api/docs
+The **`build-timeline` skill** (for coding agents) drives `track-me timeline`
+conversationally and writes the JSON only after you confirm the draft.
 
 ## Quality
-
-Run on Python files after changes (see `CLAUDE.md` for the full workflow):
 
 ```shell
 ruff format <file.py>
@@ -83,7 +79,6 @@ ty check .
 
 ## More
 
-- **`CLAUDE.md`** — working agreement for coding agents (commands, conventions).
-- **`docs/REARCH_PLAN.md`** — the overall rebuild plan (Phases 0–4).
-- **`docs/PHASE_3_UI_PLAN.md`** — the planned spot-check UI (on hold).
-- **`docs/SIDECAR_CHANGE_DETECTION.md`** — design for detecting re-tagged sidecars on re-import (planned).
+- **`CLAUDE.md`** — working agreement for coding agents (structure, commands).
+- **`docs/SIDECAR_CHANGE_DETECTION.md`** — design for detecting re-tagged sidecars
+  on re-import (planned).

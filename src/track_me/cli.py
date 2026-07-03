@@ -1,12 +1,12 @@
 """track-me command-line interface (Django-free).
 
-A single entrypoint over the SQLite pipeline. Subcommands are added as each
-piece is rewired off Django:
+A single entrypoint over the local SQLite pipeline:
 
-    track-me ingest <takeout-dir> [--force] [--thumbnails]
+    track-me ingest <takeout-dir> [--force] [--thumbnails] [--limit N]
+    track-me geocode [--resolution 9] [--recalculate] [--estimate] [--derive-only]
+    track-me export [--format gpx|geojson] [--output FILE] [--year Y]
+    track-me timeline --start ISO --end ISO [--level country|city] [--write ...]
     track-me serve [--port 5000]        # launch the timeline map viewer
-
-(`geocode` / `export` / `timeline` land as Phase 3/4 rewires them.)
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from track_me import config
 
 
 def _cmd_ingest(args: argparse.Namespace) -> None:
-    from library.ingest.pipeline import IngestPipeline
+    from track_me.ingest.pipeline import IngestPipeline
 
     config.ensure_dirs()
     print(f"Ingesting from: {args.directory}")
@@ -48,8 +48,8 @@ def _cmd_ingest(args: argparse.Namespace) -> None:
 
 
 def _cmd_geocode(args: argparse.Namespace) -> None:
-    from places.geocode import DEFAULT_GEOCODE_RESOLUTION, Geocoder, estimate_calls
     from track_me.db import Database
+    from track_me.geocode import DEFAULT_GEOCODE_RESOLUTION, Geocoder, estimate_calls
 
     db = Database(config.DB_PATH)
     db.init_schema()
@@ -94,8 +94,8 @@ def _cmd_geocode(args: argparse.Namespace) -> None:
 
 
 def _cmd_export(args: argparse.Namespace) -> None:
-    from library.export import located_items, media_to_geojson, media_to_gpx
     from track_me.db import Database
+    from track_me.export import located_items, media_to_geojson, media_to_gpx
 
     db = Database(config.DB_PATH)
     db.init_schema()
@@ -112,11 +112,38 @@ def _cmd_export(args: argparse.Namespace) -> None:
         print(text)
 
 
+def _cmd_timeline(args: argparse.Namespace) -> None:
+    from track_me import timeline as tl
+    from track_me.db import Database
+
+    db = Database(config.DB_PATH)
+    db.init_schema()
+    stays = tl.build_stays(
+        args.start,
+        args.end,
+        level=args.level,
+        region=args.region,
+        merge_km=args.merge_km,
+        min_hours=args.min_hours,
+        db=db,
+    )
+    print(tl.preview(stays))
+
+    if not args.write:
+        print("\n(preview only — re-run with --write --id --title once the user confirms)")
+        return
+    if not args.id or not args.title:
+        print("--write requires --id and --title", file=sys.stderr)
+        raise SystemExit(1)
+    doc = tl.to_document(stays, timeline_id=args.id, title=args.title, prompts=args.prompt or [])
+    out = tl.write_timeline(doc)
+    print(f"\nwrote {out}")
+
+
 def _cmd_serve(args: argparse.Namespace) -> None:
-    # Run the Flask viewer via its own module so its key/env handling is reused.
-    app_path = Path(__file__).resolve().parent.parent / "viewer" / "app.py"
+    # Run the Flask viewer as a module so package imports resolve cleanly.
     env = {**os.environ, "VIEWER_PORT": str(args.port)}
-    subprocess.run([sys.executable, str(app_path)], env=env, check=True)
+    subprocess.run([sys.executable, "-m", "track_me.viewer.app"], env=env, check=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -152,6 +179,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--output", help="output file (default: stdout)")
     p_export.add_argument("--year", type=int, help="filter to a single local year")
     p_export.set_defaults(func=_cmd_export)
+
+    p_tl = sub.add_parser("timeline", help="Build a travel timeline (preview; --write to save)")
+    p_tl.add_argument("--start", required=True, help="ISO date, inclusive (UTC)")
+    p_tl.add_argument("--end", required=True, help="ISO date, exclusive (UTC)")
+    p_tl.add_argument("--level", choices=["country", "city"], default="country")
+    p_tl.add_argument("--region", nargs="*", help="restrict to these ISO country codes")
+    p_tl.add_argument("--merge-km", type=float, default=50.0, help="city metro merge radius")
+    p_tl.add_argument("--min-hours", type=int, default=24, help="blip-smoothing threshold")
+    p_tl.add_argument("--write", action="store_true", help="persist (only after user confirms)")
+    p_tl.add_argument("--id", help="timeline id / filename stem (required with --write)")
+    p_tl.add_argument("--title", help="human title (required with --write)")
+    p_tl.add_argument(
+        "--prompt", action="append", default=[], help="repeatable; the prompt trail"
+    )
+    p_tl.set_defaults(func=_cmd_timeline)
 
     p_serve = sub.add_parser("serve", help="Launch the timeline map viewer")
     p_serve.add_argument("--port", type=int, default=5000, help="port (default: 5000)")

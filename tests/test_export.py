@@ -6,8 +6,8 @@ from datetime import timezone as dt_timezone
 
 import pytest
 
-from library.export import located_items, media_to_geojson, media_to_gpx
 from track_me.db import Database, LocationSource, Media
+from track_me.export import located_items, media_to_geojson, media_to_gpx
 
 
 @pytest.fixture

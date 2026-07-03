@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from library.ingest.matcher import SidecarMatcher
+from track_me.ingest.matcher import SidecarMatcher
 
 
 def _write(path: Path, title: str | None = None, **extra) -> Path:

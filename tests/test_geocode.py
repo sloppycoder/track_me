@@ -2,8 +2,8 @@
 
 import pytest
 
-from places.geocode import Geocoder, derive_place, estimate_calls
 from track_me.db import Database, LocationSource, Media, Place
+from track_me.geocode import Geocoder, derive_place, estimate_calls
 
 
 def _fake_reverse_geocode(latlng, language=None):

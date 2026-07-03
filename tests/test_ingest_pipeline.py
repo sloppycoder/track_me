@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from library.ingest.pipeline import IngestPipeline, _resolve_taken_at, compute_dedupe_key
 from track_me.db import Database, LocationSource, Media, TimeSource
+from track_me.ingest.pipeline import IngestPipeline, _resolve_taken_at, compute_dedupe_key
 
 TOKYO = (35.6895, 139.6917)
 

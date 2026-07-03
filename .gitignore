@@ -29,16 +29,10 @@ cdk.out
 *key*.json
 tmp/*
 
-# local data dir: keep the folder, ignore its contents (sqlite db + thumbnails)
-/data/*
-!/data/.gitkeep
 *.db
 *.sqlite3
 *.db-journal
 .claude/settings.local.json
-.django_tailwind_cli/
-assets/css/
-staticfiles/css/
 .playwright-mcp/*
 
 # personal-data analysis artifacts (contain private location history)
@@ -47,5 +41,5 @@ docs/timeline.md
 # macOS
 .DS_Store
 
-# Personal user data (timeline JSON: coords + photo links); viewer code is tracked
+# All local state: SQLite DB, thumbnails, timelines (private location data)
 /userdata/

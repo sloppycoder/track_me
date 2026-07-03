@@ -2,7 +2,7 @@
 
 import json
 
-from library.ingest.sidecar import Sidecar, load_sidecar
+from track_me.ingest.sidecar import Sidecar, load_sidecar
 
 
 def test_parse_full_sidecar():

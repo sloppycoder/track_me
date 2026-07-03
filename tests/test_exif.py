@@ -1,6 +1,6 @@
 """Unit tests for EXIF GPS parsing (no image files needed)."""
 
-from library.ingest.exif import _extract_gps, _parse_coordinate
+from track_me.ingest.exif import _extract_gps, _parse_coordinate
 
 
 def test_parse_decimal_coordinate():

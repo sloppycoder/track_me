@@ -6,7 +6,7 @@ data files (``userdata/timelines/<id>.json``) are produced by the
 timeline-building agent and served as-is for the page's JS to fetch.
 
 Run:
-    python viewer/app.py        # then open http://localhost:5000
+    track-me serve              # then open http://localhost:5000
 
 Routes:
     GET /                    index of every userdata/timelines/*.json
@@ -18,21 +18,18 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 
-from dotenv import load_dotenv
 from flask import Flask, abort, render_template, send_from_directory
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-TIMELINES_DIR = BASE_DIR / "userdata" / "timelines"
+from track_me import config
 
-load_dotenv(dotenv_path=BASE_DIR / ".env")
+TIMELINES_DIR = config.TIMELINES_DIR
 
 app = Flask(__name__)
 
 
 def _api_key() -> str:
-    key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    key = config.GOOGLE_MAPS_API_KEY
     if not key:
         raise RuntimeError("GOOGLE_MAPS_API_KEY not set (put it in .env).")
     return key

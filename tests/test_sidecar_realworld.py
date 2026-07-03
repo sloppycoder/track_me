@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from library.ingest.matcher import SidecarMatcher
-from library.ingest.sidecar import load_sidecar
+from track_me.ingest.matcher import SidecarMatcher
+from track_me.ingest.sidecar import load_sidecar
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SIDECARS = FIXTURES / "sidecars"
