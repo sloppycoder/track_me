@@ -18,7 +18,6 @@ src/track_me/
   export.py      # GPX / GeoJSON export
   thumbnails.py  # opt-in thumbnail cache
   tz.py          # offline timezone lookup
-  search.py      # smart-search query parsing (salvaged; not yet wired in)
   viewer/        # Flask app + templates (renders timelines on Google Maps)
 ```
 
