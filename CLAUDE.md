@@ -12,7 +12,8 @@ src/track_me/
   config.py      # dotenv-backed settings; all state under userdata/
   db.py          # SQLite data layer: Media/Place dataclasses + Database repository
   schema.sql     # hand-authored schema (media + place)
-  ingest/        # exif, sidecar, matcher, pipeline
+  storage.py     # object-store abstraction: LocalStore / S3Store (+ from_uri)
+  ingest/        # exif, sidecar, matcher, pipeline (parallel, over the store)
   geocode.py     # reverse-geocoding (fetch + derive)
   timeline.py    # build travel timelines from the catalog
   export.py      # GPX / GeoJSON export
@@ -68,32 +69,25 @@ local — the DB, `thumbnails/`, `timelines/` — lives under `userdata/` (gitig
 
 ## CLI: `track-me`
 
-Single entrypoint (installed console script; also `uv run track-me ...`). Source
-in `src/track_me/cli.py`.
-
-```bash
-# 1. Ingest a Google Takeout extract (parse sidecar JSON + EXIF, set taken_at +
-#    timezone + local_date, resolve location, store the Google Photos URL).
-track-me ingest <takeout-dir> [--force] [--thumbnails] [--limit N]
-
-# 2. Reverse-geocode located items (H3-batched Google calls) into place names.
-#    Splits into fetch (Google, costs API) + derive (offline city/admin1).
-track-me geocode [--resolution 9] [--recalculate] [--max-api-calls N] \
-                 [--estimate] [--derive-only]
-
-# 3. Export located media as timestamped GPX/GeoJSON points.
-track-me export [--format gpx|geojson] [--output FILE] [--year Y]
-
-# 4. Build a travel timeline (preview; --write persists to userdata/timelines/).
-track-me timeline --start ISO --end ISO [--level country|city] [--region CC ...] \
-                  [--write --id ID --title TITLE --prompt "..."]
-
-# 5. Launch the Google Maps timeline viewer (Flask) at http://localhost:5000.
-track-me serve [--port 5000]
-```
+Single entrypoint (installed console script; also `uv run track-me ...`), source in
+`src/track_me/cli.py`. Five subcommands: `ingest · geocode · export · timeline ·
+serve`. **The full command + flag reference lives in `README.md`** — don't
+duplicate it here (it drifts). Below is the behavior agents should know.
 
 Ingest and geocode are re-runnable/incremental (dedupe by `Media.dedupe_key`;
 geocode skips cells already fetched) and never overwrite manual edits.
+
+**Ingest (`ingest/pipeline.py`) is object-store based, parallel, and lazy.** It
+reads a Takeout source through `storage.py` (`LocalStore` or `S3Store`, chosen by
+`from_uri`), lists all objects once (grouped by directory in memory), and runs
+per-object work in a thread pool (`--workers`, default 32) while the main thread
+is the sole SQLite writer. It is **sidecar-first**: identity/time/location come
+from the sidecar JSON, and the image is downloaded + decoded **only** when the
+sidecar lacks location, time, or identity (the perceptual hash — a full decode —
+runs only when needed for identity). `--filter` limits to a capture-month range
+for quick test runs. **Change detection:** a `sidecar_fingerprint`
+(coords/title/description) makes re-tagged photos `refreshed` rather than skipped,
+and a moved location resets `media.geo_cell` so incremental `geocode` re-links it.
 
 **Geocode = fetch + derive.** Fetch stores the raw Google response in
 `place.geocode_raw`; derive picks `city`/`admin1` from it via a priority fallback

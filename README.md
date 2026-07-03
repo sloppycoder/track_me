@@ -35,9 +35,11 @@ gitignored. The schema is created automatically on first use — no migrations.
 ## The pipeline
 
 ```shell
-# 1. INGEST a Takeout extract: parse sidecars + EXIF, set taken_at + local_date +
-#    timezone for every item, resolve location, store the Google Photos link.
-track-me ingest /path/to/takeout-extract [--thumbnails] [--force] [--limit N]
+# 1. INGEST a Takeout source (local dir or s3://bucket/prefix): match sidecars,
+#    set taken_at + local_date + timezone, resolve location, store the Photos link.
+#    Parallel + sidecar-first (reads image bytes only when the sidecar lacks data).
+track-me ingest <source> [--thumbnails] [--force] \
+                 [--filter YYYY-MM[,YYYY-MM]] [--workers 32]
 
 # 2. GEOCODE located items into place names (H3-batched Google calls). Fetch stores
 #    the raw response; derive picks city/admin1 offline (re-runnable, free).
@@ -80,5 +82,5 @@ ty check .
 ## More
 
 - **`CLAUDE.md`** — working agreement for coding agents (structure, commands).
-- **`docs/SIDECAR_CHANGE_DETECTION.md`** — design for detecting re-tagged sidecars
-  on re-import (planned).
+- **`docs/test_plan.md`** — real-data test plan for ingest + geocode (old-vs-new
+  comparison against the legacy DB).

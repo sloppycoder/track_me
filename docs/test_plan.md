@@ -30,11 +30,23 @@ that difference is exactly what this plan surfaces.)
 
 ## Step 1 — Ingest
 
+`$TAKEOUT` may be a local directory **or an `s3://bucket/prefix` URI** (the S3
+case is the one worth timing — the object-store + parallel + sidecar-first rewrite
+targets exactly the slow S3 mount). **Time each run** and record it, so we can see
+whether ingest got faster:
+
 ```bash
-track-me ingest "$TAKEOUT" --filter 2012-03
-track-me ingest "$TAKEOUT" --filter 2023-06
-track-me ingest "$TAKEOUT" --filter 2004-02
+for ym in 2012-03 2023-06 2004-02; do
+  echo "=== ingest $ym ==="
+  /usr/bin/time -p track-me ingest "$TAKEOUT" --filter "$ym"
+done
 ```
+
+**Capture and report, per slice:** the wall-clock (`real` seconds from `time`),
+the `Created` count, and the `--workers` used (default 32; try e.g. `--workers 64`
+on S3 to see if more concurrency helps). Note whether the source was local or
+`s3://`. A re-run of a slice should be near-instant (everything skips) — that
+number is worth capturing too, as the incremental-cost baseline.
 
 Sanity checks (expected):
 - Each run prints `Created` ≈ the table above and `Filtered (outside month range)` > 0.
