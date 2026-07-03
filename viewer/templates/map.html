@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Timeline map</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; width: 100%; }
+    #panel { position: absolute; top: 12px; left: 12px; z-index: 5; max-width: 20rem;
+      background: #fff; border-radius: .6rem; box-shadow: 0 2px 10px #0003;
+      font: 14px/1.45 system-ui, sans-serif; overflow: hidden; }
+    #panel h1 { font-size: 1rem; margin: 0; padding: .7rem .9rem; background: #4285f4; color: #fff; }
+    #panel .back { color: #fff; text-decoration: none; opacity: .85; font-weight: 400; font-size: .8rem; }
+    #stays { list-style: none; margin: 0; padding: .3rem 0; max-height: 60vh; overflow-y: auto; }
+    #stays li { padding: .35rem .9rem; cursor: pointer; display: flex; gap: .55rem; align-items: baseline; }
+    #stays li:hover { background: #4285f411; }
+    #stays .n { display: inline-flex; align-items: center; justify-content: center;
+      min-width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #4285f4; color: #fff;
+      font-size: .72rem; font-weight: 600; flex: 0 0 auto; }
+    #stays .lbl { font-weight: 600; }
+    #stays .dt { display: block; font-size: .78rem; opacity: .6; }
+    #err { position: absolute; inset: 0; display: none; place-content: center; text-align: center;
+      font: 15px system-ui, sans-serif; padding: 2rem; color: #b00; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <h1><a class="back" href="/">&larr;</a> <span id="ptitle">Timeline</span></h1>
+    <ul id="stays"></ul>
+  </div>
+  <div id="map"></div>
+  <div id="err"></div>
+
+  <script>
+    const TIMELINE_ID = {{ timeline_id | tojson }};
+    let map, infoWindow, markers = [];
+
+    function fmtRange(s) {
+      if (s.from && s.to && s.from !== s.to) return `${s.from} → ${s.to}`;
+      return s.from || s.to || "";
+    }
+
+    function popupHtml(s, i) {
+      const parts = [`<strong>${i + 1}. ${s.label ?? ""}</strong>`];
+      const r = fmtRange(s); if (r) parts.push(`<div>${r}</div>`);
+      if (s.photo_count != null) parts.push(`<div>${s.photo_count} photos</div>`);
+      if (s.sample_url) parts.push(`<div><a href="${s.sample_url}" target="_blank" rel="noopener">open in Google Photos</a></div>`);
+      return `<div style="font:13px system-ui;line-height:1.4">${parts.join("")}</div>`;
+    }
+
+    async function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 20, lng: 0 }, zoom: 2, mapTypeControl: false, streetViewControl: false,
+      });
+      infoWindow = new google.maps.InfoWindow();
+
+      let data;
+      try {
+        const res = await fetch(`/timeline/${TIMELINE_ID}.json`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      } catch (e) {
+        return showError(`Could not load timeline data: ${e.message}`);
+      }
+
+      document.getElementById("ptitle").textContent = data.title || TIMELINE_ID;
+      const stays = (data.stays || []).filter(s => s.lat != null && s.lng != null);
+      if (!stays.length) return showError("This timeline has no located stays to plot.");
+
+      const bounds = new google.maps.LatLngBounds();
+      const list = document.getElementById("stays");
+      const path = [];
+
+      stays.forEach((s, i) => {
+        const pos = { lat: s.lat, lng: s.lng };
+        path.push(pos);
+        bounds.extend(pos);
+
+        const marker = new google.maps.Marker({
+          position: pos, map, label: { text: String(i + 1), color: "#fff", fontSize: "12px" },
+          title: s.label || "",
+        });
+        marker.addListener("click", () => {
+          infoWindow.setContent(popupHtml(s, i));
+          infoWindow.open(map, marker);
+        });
+        markers.push(marker);
+
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="n">${i + 1}</span><span><span class="lbl">${s.label ?? ""}</span>`
+          + `<span class="dt">${fmtRange(s)}</span></span>`;
+        li.addEventListener("click", () => {
+          map.panTo(pos);
+          infoWindow.setContent(popupHtml(s, i));
+          infoWindow.open(map, marker);
+        });
+        list.appendChild(li);
+      });
+
+      new google.maps.Polyline({
+        path, map, geodesic: true, strokeColor: "#4285f4", strokeOpacity: 0.85, strokeWeight: 2.5,
+      });
+
+      if (stays.length === 1) { map.setCenter(path[0]); map.setZoom(9); }
+      else map.fitBounds(bounds, 60);
+    }
+
+    function showError(msg) {
+      const el = document.getElementById("err");
+      el.textContent = msg; el.style.display = "grid";
+    }
+    // Surface Google's own auth/referrer failures (otherwise just a blank map).
+    window.gm_authFailure = () =>
+      showError("Google Maps rejected the API key (check referrer restrictions / billing).");
+  </script>
+  <script async
+    src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&callback=initMap&loading=async">
+  </script>
+</body>
+</html>

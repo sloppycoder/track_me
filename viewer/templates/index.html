@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Travel timelines</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 16px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    ul { list-style: none; padding: 0; }
+    li { margin: 0; }
+    a.card { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
+      padding: .8rem 1rem; margin: .5rem 0; border: 1px solid #8883; border-radius: .6rem;
+      text-decoration: none; color: inherit; }
+    a.card:hover { border-color: #4285f4; background: #4285f411; }
+    .title { font-weight: 600; }
+    .meta { font-size: .8rem; opacity: .6; white-space: nowrap; }
+    .empty { opacity: .6; }
+  </style>
+</head>
+<body>
+  <h1>Travel timelines</h1>
+  {% if timelines %}
+    <ul>
+      {% for t in timelines %}
+        <li>
+          <a class="card" href="/t/{{ t.id }}">
+            <span class="title">{{ t.title }}</span>
+            <span class="meta">{{ t.stay_count }} stays{% if t.generated_at %} &middot; {{ t.generated_at[:10] }}{% endif %}</span>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty">No timelines yet. Ask the agent to build one into
+      <code>userdata/timelines/&lt;id&gt;.json</code>.</p>
+  {% endif %}
+</body>
+</html>

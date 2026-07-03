@@ -46,3 +46,6 @@ docs/timeline.md
 
 # macOS
 .DS_Store
+
+# Personal user data (timeline JSON: coords + photo links); viewer code is tracked
+/userdata/
