@@ -82,5 +82,3 @@ ty check .
 ## More
 
 - **`CLAUDE.md`** — working agreement for coding agents (structure, commands).
-- **`docs/test_plan.md`** — real-data test plan for ingest + geocode (old-vs-new
-  comparison against the legacy DB).
