@@ -25,6 +25,29 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 # res-11 H3 cell persisted per photo; coarser cells derived with cell_to_parent.
 H3_BASE_RESOLUTION = 11
 
+
+# Enum-like string constants (values match the schema CHECK constraints). Plain
+# classes rather than Django TextChoices — no framework dependency.
+class MediaKind:
+    PHOTO = "photo"
+    VIDEO = "video"
+
+
+class TimeSource:
+    SIDECAR = "sidecar"
+    EXIF = "exif"
+    FILE_MTIME = "file_mtime"
+    MANUAL = "manual"
+
+
+class LocationSource:
+    EXIF_GPS = "exif_gps"
+    TAKEOUT = "takeout_geodata"
+    MANUAL = "manual"
+    INTERPOLATED = "interpolated"
+    NONE = "none"
+
+
 # media columns in schema order, excluding the autoincrement `id`.
 _MEDIA_COLUMNS = (
     "dedupe_key",

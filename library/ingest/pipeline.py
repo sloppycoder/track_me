@@ -18,15 +18,13 @@ from datetime import datetime
 from datetime import timezone as dt_timezone
 from pathlib import Path
 
-from django.conf import settings
-from django.utils import timezone as dj_tz
-
 from library.ingest import exif as exif_mod
 from library.ingest.matcher import SidecarMatcher
 from library.ingest.sidecar import Sidecar, load_sidecar
 from library.media.thumbnails import ThumbnailService
-from library.models import LocationSource, MediaItem, MediaKind, TimeSource
 from library.tz import timezone_for as tz_for
+from track_me import config
+from track_me.db import Database, LocationSource, Media, MediaKind, TimeSource, now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -115,12 +113,23 @@ def _resolve_taken_at(
 
 
 class IngestPipeline:
-    def __init__(self, progress_callback=None, generate_thumbnails: bool = False):
+    def __init__(
+        self,
+        db: Database | None = None,
+        *,
+        progress_callback=None,
+        generate_thumbnails: bool = False,
+        thumbnail_cache_dir=None,
+        thumbnail_size=None,
+    ):
+        self.db = db or Database(config.DB_PATH)
+        self.db.init_schema()
         self.progress = progress_callback or (lambda _m: None)
         self.generate_thumbnails = generate_thumbnails
         self.matcher = SidecarMatcher()
         self.thumbnails = ThumbnailService(
-            cache_dir=settings.THUMBNAIL_CACHE_DIR, size=settings.THUMBNAIL_SIZE
+            cache_dir=thumbnail_cache_dir or config.THUMBNAIL_CACHE_DIR,
+            size=thumbnail_size or config.THUMBNAIL_SIZE,
         )
 
     # --- public API ------------------------------------------------------
@@ -154,6 +163,7 @@ class IngestPipeline:
 
     def _ingest_one(self, path: Path, root: str, force: bool, stats: IngestStats) -> None:
         kind = _kind_for(path.suffix.lower())
+        assert kind is not None  # _discover only yields recognised media files
         rel_path = os.path.relpath(path, root)
 
         # Cheap pass: parse sidecar (no image decode yet).
@@ -177,7 +187,7 @@ class IngestPipeline:
                 file_name=path.name,
                 file_size=0,
             )
-            existing = MediaItem.objects.filter(dedupe_key=key).first()
+            existing = self.db.get_media_by_dedupe_key(key)
             if existing and existing.taken_at and self._thumb_ok(existing, kind):
                 stats.skipped += 1
                 return
@@ -200,7 +210,7 @@ class IngestPipeline:
             file_size=size,
         )
 
-        item = MediaItem.objects.filter(dedupe_key=key).first()
+        item = self.db.get_media_by_dedupe_key(key)
         created = item is None
 
         # Orphans (no sidecar) only reveal their key after decoding; once we know
@@ -210,11 +220,11 @@ class IngestPipeline:
             return
 
         if item is None:
-            item = MediaItem(dedupe_key=key)
+            item = Media(dedupe_key=key)
 
         item.file_name = path.name
         item.kind = kind
-        item.last_source_path = rel_path[:512]
+        item.source_path = rel_path[:512]
         if google_url:
             item.google_photos_url = google_url
         item.sidecar_raw = sidecar.model_dump(exclude_none=True) if sidecar else None
@@ -227,10 +237,10 @@ class IngestPipeline:
         tz = tz_for(*coords) if coords else None
 
         # Time (preserve a manual override on re-ingest).
-        if not (not created and item.time_source == TimeSource.MANUAL):
+        if not (not created and item.taken_at_source == TimeSource.MANUAL):
             taken_at, time_source = _resolve_taken_at(sidecar, data.datetime_text, path, tz)
             item.taken_at = taken_at
-            item.time_source = time_source
+            item.taken_at_source = time_source
 
         # Location (preserve a manual override on re-ingest).
         if not (not created and item.location_source == LocationSource.MANUAL):
@@ -243,17 +253,18 @@ class IngestPipeline:
                 item.timezone = None
                 item.needs_review = True
 
-        item.save()
-
-        # Eager thumbnail so it survives deletion of the Takeout extract.
+        # Eager thumbnail so it survives deletion of the Takeout extract. Generated
+        # before the upsert so its timestamp persists in a single write.
         if (
             self.generate_thumbnails
             and kind == MediaKind.PHOTO
-            and not self.thumbnails.exists(item.dedupe_key)
+            and not self.thumbnails.exists(key)
         ):
-            if self.thumbnails.generate(path, item.dedupe_key):
-                item.thumbnail_cached_at = dj_tz.now()
-                item.save(update_fields=["thumbnail_cached_at"])
+            if self.thumbnails.generate(path, key):
+                item.thumbnail_cached_at = now_utc()
+
+        item.refresh_local_date()
+        self.db.upsert_media(item)
 
         if item.has_location:
             stats.with_location += 1
@@ -272,7 +283,7 @@ class IngestPipeline:
             return coords, LocationSource.TAKEOUT
         return None, LocationSource.NONE
 
-    def _thumb_ok(self, item: MediaItem, kind: str | None) -> bool:
+    def _thumb_ok(self, item: Media, kind: str | None) -> bool:
         if not self.generate_thumbnails:
             return True
         return kind != MediaKind.PHOTO or self.thumbnails.exists(item.dedupe_key)
