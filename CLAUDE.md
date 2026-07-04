@@ -97,9 +97,10 @@ single Google field is "the city" worldwide. Retune the chain and re-run
 
 ## Building travel timelines
 
-Prefer the **`build-timeline` skill** (`.claude/skills/build-timeline/`) — it
+Prefer the **`build-timeline` skill** (`.agents/skills/build-timeline/`) — it
 drives `track-me timeline` conversationally and only writes the JSON after the
-user confirms. Logic lives in `src/track_me/timeline.py`. The recipe:
+user confirms. `.claude/skills/build-timeline` is a symlink for Claude Code
+compatibility. Logic lives in `src/track_me/timeline.py`. The recipe:
 
 1. Pull located photos for the window, ordered by `taken_at` (UTC); bucket dates
    by the photo's **local day** (`local_date`).
