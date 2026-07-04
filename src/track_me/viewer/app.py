@@ -28,6 +28,18 @@ TIMELINES_DIR = config.TIMELINES_DIR
 app = Flask(__name__)
 
 
+@app.after_request
+def _no_cache(resp):
+    """Cache-bust everything this server hands out (HTML + inline CSS/JS + the
+    timeline JSON) so edits and freshly rebuilt timelines always show up on
+    reload. The Google Maps JS/CSS is loaded straight from the CDN by the
+    browser — it never passes through here — so it stays cacheable."""
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
 def _api_key() -> str:
     key = config.GOOGLE_MAPS_API_KEY
     if not key:

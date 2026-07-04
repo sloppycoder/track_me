@@ -76,3 +76,33 @@ def test_document_and_write(trip, tmp_path, monkeypatch):
     out = tl.write_timeline(doc)
     assert out.exists()
     assert out.name == "t2019.json"
+    # Without an explicit points= arg the payload is omitted (backward-compatible).
+    assert "points" not in doc
+
+
+def test_points_payload_shape(trip):
+    points = tl.load_points("2019-06-01", "2019-07-01", db=trip)
+    rows = tl.points_payload(points)
+    assert len(rows) == len(points)
+    # columnar rows match POINT_FIELDS, ordered by time, minute-resolution timestamps
+    assert tl.POINT_FIELDS == ["t", "lat", "lng", "cc", "city", "photo_id"]
+    first = rows[0]
+    assert len(first) == len(tl.POINT_FIELDS)
+    assert first[0] == "2019-06-01T12:00"
+    assert first[3] == "SG" and first[4] == "Singapore"
+    assert [r[0] for r in rows] == sorted(r[0] for r in rows)
+
+
+def test_document_embeds_points_when_requested(trip):
+    points = tl.load_points("2019-06-01", "2019-07-01", db=trip)
+    stays = tl.build_stays("2019-06-01", "2019-07-01", level="country", db=trip, points=points)
+    doc = tl.to_document(stays, timeline_id="t", title="T", prompts=[], points=points)
+    assert doc["point_fields"] == tl.POINT_FIELDS
+    assert doc["photo_url_prefix"].startswith("https://")
+    assert len(doc["points"]) == len(points)
+
+
+def test_photo_id_strips_known_prefix():
+    assert tl._photo_id(tl._PHOTO_URL_PREFIX + "ABC123") == "ABC123"
+    assert tl._photo_id("https://example.com/x") == "https://example.com/x"
+    assert tl._photo_id(None) is None

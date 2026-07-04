@@ -162,16 +162,69 @@ def city_stays(points: list[dict], *, merge_km: float = 50.0, min_hours: int = 2
 
 
 # --------------------------------------------------------------------------- #
-# 4. Document + persist                                                       #
+# 4. Points payload (for the interactive viewer)                              #
 # --------------------------------------------------------------------------- #
-def to_document(stays: list[dict], *, timeline_id: str, title: str, prompts: list[str]) -> dict:
-    return {
+# Compact, self-describing columnar rows so the viewer can filter by time and
+# re-cluster at any granularity (country / city / neighborhood) client-side.
+POINT_FIELDS = ["t", "lat", "lng", "cc", "city", "photo_id"]
+_PHOTO_URL_PREFIX = "https://photos.google.com/photo/"
+
+
+def _photo_id(url: str | None) -> str | None:
+    """Strip the common Google Photos prefix to keep the payload small.
+
+    Non-matching URLs are kept whole; the viewer treats any value starting with
+    ``http`` as a full URL and otherwise re-prepends the prefix."""
+    if not url:
+        return None
+    return url[len(_PHOTO_URL_PREFIX) :] if url.startswith(_PHOTO_URL_PREFIX) else url
+
+
+def points_payload(points: list[dict]) -> list[list]:
+    """Turn loaded ``load_points`` rows into compact columnar POINT_FIELDS rows."""
+    rows: list[list] = []
+    for p in points:
+        if p["lat"] is None or p["lng"] is None:
+            continue
+        t = p["t"]
+        # minute resolution is plenty for a timeline and trims the payload
+        ts = t.strftime("%Y-%m-%dT%H:%M") if t is not None else (p["local_date"] or "")
+        rows.append(
+            [
+                ts,
+                round(p["lat"], 5),
+                round(p["lng"], 5),
+                p["cc"],
+                p["city"],
+                _photo_id(p["url"]),
+            ]
+        )
+    return rows
+
+
+# --------------------------------------------------------------------------- #
+# 5. Document + persist                                                        #
+# --------------------------------------------------------------------------- #
+def to_document(
+    stays: list[dict],
+    *,
+    timeline_id: str,
+    title: str,
+    prompts: list[str],
+    points: list[dict] | None = None,
+) -> dict:
+    doc = {
         "id": timeline_id,
         "title": title,
         "prompts": prompts,
         "generated_at": now_utc().replace(microsecond=0).isoformat(),
         "stays": stays,
     }
+    if points is not None:
+        doc["photo_url_prefix"] = _PHOTO_URL_PREFIX
+        doc["point_fields"] = POINT_FIELDS
+        doc["points"] = points_payload(points)
+    return doc
 
 
 def write_timeline(doc: dict) -> Path:
@@ -200,9 +253,14 @@ def build_stays(
     merge_km: float = 50.0,
     min_hours: int = 24,
     db: Database | None = None,
+    points: list[dict] | None = None,
 ) -> list[dict]:
-    """Convenience: load + segment at the requested granularity."""
-    points = load_points(start, end, db=db, region=region)
+    """Convenience: load + segment at the requested granularity.
+
+    Pass ``points`` (from :func:`load_points`) to reuse an already-loaded set
+    instead of querying again — the CLI does this so it can also embed them."""
+    if points is None:
+        points = load_points(start, end, db=db, region=region)
     if level == "city":
         return city_stays(points, merge_km=merge_km, min_hours=min_hours)
     return country_stays(points, min_hours=min_hours)

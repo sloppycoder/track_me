@@ -140,6 +140,7 @@ def _cmd_timeline(args: argparse.Namespace) -> None:
 
     db = Database(config.DB_PATH)
     db.init_schema()
+    points = tl.load_points(args.start, args.end, db=db, region=args.region)
     stays = tl.build_stays(
         args.start,
         args.end,
@@ -148,6 +149,7 @@ def _cmd_timeline(args: argparse.Namespace) -> None:
         merge_km=args.merge_km,
         min_hours=args.min_hours,
         db=db,
+        points=points,
     )
     print(tl.preview(stays))
 
@@ -157,7 +159,13 @@ def _cmd_timeline(args: argparse.Namespace) -> None:
     if not args.id or not args.title:
         print("--write requires --id and --title", file=sys.stderr)
         raise SystemExit(1)
-    doc = tl.to_document(stays, timeline_id=args.id, title=args.title, prompts=args.prompt or [])
+    doc = tl.to_document(
+        stays,
+        timeline_id=args.id,
+        title=args.title,
+        prompts=args.prompt or [],
+        points=points if args.embed_points else None,
+    )
     out = tl.write_timeline(doc)
     print(f"\nwrote {out}")
 
@@ -222,7 +230,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_tl.add_argument(
         "--prompt", action="append", default=[], help="repeatable; the prompt trail"
     )
-    p_tl.set_defaults(func=_cmd_timeline)
+    p_tl.add_argument(
+        "--no-points",
+        dest="embed_points",
+        action="store_false",
+        help="omit the per-photo points payload the interactive viewer uses to re-cluster",
+    )
+    p_tl.set_defaults(func=_cmd_timeline, embed_points=True)
 
     p_serve = sub.add_parser("serve", help="Launch the timeline map viewer")
     p_serve.add_argument("--port", type=int, default=5000, help="port (default: 5000)")

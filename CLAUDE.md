@@ -121,6 +121,14 @@ once per distinct visit) → `userdata/timelines/<id>.json`, rendered by the vie
 Google Maps JS API, injecting `GOOGLE_MAPS_API_KEY` (from `.env`) server-side. It
 reads only the JSON files — never the DB. Launch with `track-me serve`.
 
+The map UI (`map.html`) is **client-side interactive**: when the JSON carries a
+`points` payload (compact `point_fields` rows — see `timeline.points_payload`,
+embedded by `timeline --write` unless `--no-points`), a time-range slider + photo
+histogram under the map scrubs to any window and the map **re-clusters the points
+live** at country / city / neighborhood (~1 km grid) granularity — auto-selected
+from the window length, or forced via the Auto/Country/City/Area toggle. Timelines
+without `points` fall back to the old static `stays` markers.
+
 ## Testing
 
 ```bash

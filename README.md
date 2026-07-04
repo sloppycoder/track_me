@@ -66,6 +66,14 @@ track-me timeline --start 2019-01-01 --end 2020-01-01 --level country \
 track-me serve
 ```
 
+`--write` also embeds a compact per-photo **points** payload in the JSON so the
+viewer can re-cluster on the fly; pass `--no-points` to omit it for a lighter file.
+
+The viewer is interactive: a time-range slider (with a photo-density histogram)
+under the map lets you scrub to any window, and the map POIs adapt from **country
+→ city → neighborhood** as you narrow the range (or force a level with the
+Auto / Country / City / Area toggle).
+
 The **`build-timeline` skill** (for coding agents) drives `track-me timeline`
 conversationally and writes the JSON only after you confirm the draft.
 

@@ -5,112 +5,668 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Timeline map</title>
   <style>
+    :root {
+      --accent: #4285f4;
+      --panel-bg: #ffffff;
+      --ink: #1a1a1a;
+      --muted: #6b7280;
+      --line: #e3e6ea;
+      --bar-out: #d3dae4;   /* histogram outside the selection (dimmed) */
+      --bar-in: #6b9bec;    /* histogram inside the selection */
+    }
+    * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
-    #map { height: 100%; width: 100%; }
-    #panel { position: absolute; top: 12px; left: 12px; z-index: 5; max-width: 20rem;
-      background: #fff; border-radius: .6rem; box-shadow: 0 2px 10px #0003;
-      font: 14px/1.45 system-ui, sans-serif; overflow: hidden; }
-    #panel h1 { font-size: 1rem; margin: 0; padding: .7rem .9rem; background: #4285f4; color: #fff; }
-    #panel .back { color: #fff; text-decoration: none; opacity: .85; font-weight: 400; font-size: .8rem; }
-    #stays { list-style: none; margin: 0; padding: .3rem 0; max-height: 60vh; overflow-y: auto; }
-    #stays li { padding: .35rem .9rem; cursor: pointer; display: flex; gap: .55rem; align-items: baseline; }
-    #stays li:hover { background: #4285f411; }
-    #stays .n { display: inline-flex; align-items: center; justify-content: center;
-      min-width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #4285f4; color: #fff;
+    body { display: grid; grid-template-rows: 1fr auto; font: 14px/1.45 system-ui, sans-serif;
+      color: var(--ink); }
+
+    /* --- map + overlays --- */
+    #stage { position: relative; min-height: 0; }
+    #map { position: absolute; inset: 0; }
+
+    #sidebar { position: absolute; top: 12px; left: 12px; z-index: 5; width: 19rem; max-width: 78vw;
+      background: var(--panel-bg); border-radius: .7rem; box-shadow: 0 4px 18px #0002;
+      overflow: hidden; display: flex; flex-direction: column; max-height: calc(100% - 24px); }
+    #sidebar h1 { font-size: .98rem; margin: 0; padding: .65rem .85rem; background: var(--accent);
+      color: #fff; display: flex; align-items: baseline; gap: .5rem; font-weight: 600; }
+    #sidebar h1 .back { color: #fff; text-decoration: none; opacity: .9; font-weight: 400; }
+    #sidebar h1 .ttl { flex: 1; min-width: 0; }
+    #subhead { padding: .4rem .85rem; font-size: .78rem; color: var(--muted);
+      border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: .5rem; }
+    #places { list-style: none; margin: 0; padding: .25rem 0; overflow-y: auto; }
+    #places li { padding: .38rem .85rem; cursor: pointer; display: flex; gap: .6rem; align-items: baseline; }
+    #places li:hover, #places li.active { background: #4285f416; }
+    #places .n { display: inline-flex; align-items: center; justify-content: center;
+      min-width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--accent); color: #fff;
       font-size: .72rem; font-weight: 600; flex: 0 0 auto; }
-    #stays .lbl { font-weight: 600; }
-    #stays .dt { display: block; font-size: .78rem; opacity: .6; }
+    #places .body { min-width: 0; }
+    #places .lbl { font-weight: 600; }
+    #places .meta { display: block; font-size: .76rem; color: var(--muted); }
+    #places .empty { padding: .8rem .85rem; color: var(--muted); }
+
+    /* --- bottom time strip --- */
+    #strip { background: var(--panel-bg); border-top: 1px solid var(--line);
+      padding: .55rem .9rem .7rem; box-shadow: 0 -2px 12px #0001; user-select: none; }
+    #striphead { display: flex; align-items: center; gap: .75rem; margin-bottom: .35rem;
+      flex-wrap: wrap; }
+    #range-read { font-weight: 600; }
+    #range-sub { color: var(--muted); font-size: .82rem; }
+    #striphead .spacer { flex: 1; }
+    .seg { display: inline-flex; border: 1px solid var(--line); border-radius: .45rem; overflow: hidden; }
+    .seg button { border: 0; background: transparent; padding: .28rem .6rem; font: inherit;
+      font-size: .8rem; cursor: pointer; color: var(--muted); }
+    .seg button.on { background: var(--accent); color: #fff; }
+    .seg button + button { border-left: 1px solid var(--line); }
+    #zoom-seg button { font-size: 1.05rem; line-height: 1; padding: .2rem .55rem; min-width: 1.9rem;
+      color: var(--ink); font-weight: 600; }
+    #reset { border: 1px solid var(--line); background: transparent; border-radius: .45rem;
+      padding: .28rem .6rem; font: inherit; font-size: .8rem; cursor: pointer; color: var(--muted); }
+    #reset:hover, .seg button:not(.on):hover { background: #0000000a; }
+
+    #track { position: relative; height: 96px; margin-top: .2rem; cursor: crosshair;
+      border-radius: .4rem; overflow: hidden; background: #f6f8fa; }
+    #bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 1px;
+      padding: 4px 0 16px; pointer-events: none; }
+    #bars .bar { flex: 1 1 0; background: var(--bar-out); border-radius: 1px 1px 0 0;
+      min-height: 1px; transition: background .08s; }
+    #bars .bar.inwin { background: var(--bar-in); }
+    #bars .bar.empty { background: transparent; }
+    #axis { position: absolute; left: 0; right: 0; bottom: 0; height: 15px; pointer-events: none; }
+    #axis .tick { position: absolute; bottom: 0; font-size: .66rem; color: var(--muted);
+      transform: translateX(-50%); white-space: nowrap; }
+    #axis .tick::before { content: ""; position: absolute; top: -3px; left: 50%; width: 1px;
+      height: 3px; background: var(--line); }
+    #hint { margin-top: .35rem; font-size: .74rem; color: var(--muted); text-align: center; }
+    /* date bubbles above each handle, shown only while scrubbing */
+    .tip { position: absolute; top: 3px; transform: translateX(-50%); z-index: 6;
+      background: var(--accent); color: #fff; font-size: .72rem; font-weight: 600;
+      padding: .1rem .42rem; border-radius: .35rem; white-space: nowrap; pointer-events: none;
+      opacity: 0; transition: opacity .1s; box-shadow: 0 1px 4px #0005; }
+    #track.scrubbing .tip { opacity: 1; }
+    #sel { position: absolute; top: 0; bottom: 15px; background: #4285f41f; cursor: grab;
+      box-shadow: inset 0 0 0 1px #4285f455; }
+    #sel.drag { cursor: grabbing; }
+    /* handles sit fully inside the selection edges so they're never clipped */
+    .handle { position: absolute; top: 0; bottom: 0; width: 20px; cursor: ew-resize; z-index: 4;
+      display: flex; align-items: center; justify-content: center; }
+    .handle::after { content: ""; width: 6px; height: 72%; background: var(--accent);
+      border-radius: 4px; box-shadow: 0 0 0 2px #fff, 0 1px 3px #0004; }
+    #hL { left: 0; } #hR { right: 0; }
+
     #err { position: absolute; inset: 0; display: none; place-content: center; text-align: center;
-      font: 15px system-ui, sans-serif; padding: 2rem; color: #b00; }
+      font: 15px system-ui, sans-serif; padding: 2rem; color: #b00; z-index: 9; background: #fff; }
+    @media (max-width: 560px) { #sidebar { width: 14rem; } }
   </style>
 </head>
 <body>
-  <div id="panel">
-    <h1><a class="back" href="/">&larr;</a> <span id="ptitle">Timeline</span></h1>
-    <ul id="stays"></ul>
+  <div id="stage">
+    <div id="map"></div>
+    <div id="sidebar">
+      <h1><a class="back" href="/" title="All timelines">&larr;</a>
+        <span class="ttl" id="ptitle">Timeline</span></h1>
+      <div id="subhead"><span id="gran-note">—</span><span id="count-note"></span></div>
+      <ul id="places"></ul>
+    </div>
+    <div id="err"></div>
   </div>
-  <div id="map"></div>
-  <div id="err"></div>
+
+  <div id="strip">
+    <div id="striphead">
+      <span id="range-read">—</span>
+      <span id="range-sub"></span>
+      <span class="spacer"></span>
+      <span class="seg" id="gran-seg">
+        <button data-g="auto" class="on">Auto</button>
+        <button data-g="country">Country</button>
+        <button data-g="city">City</button>
+        <button data-g="area">Area</button>
+      </span>
+      <span class="seg" id="zoom-seg">
+        <button id="zoomout" title="Zoom out (show more time)">&minus;</button>
+        <button id="zoomin" title="Zoom in (show less time)">&plus;</button>
+      </span>
+      <button id="reset">Reset</button>
+    </div>
+    <div id="track">
+      <div id="bars"></div>
+      <div id="sel">
+        <div class="handle" id="hL"></div>
+        <div class="handle" id="hR"></div>
+      </div>
+      <div id="axis"></div>
+      <div class="tip" id="tipL"></div>
+      <div class="tip" id="tipR"></div>
+    </div>
+    <div id="hint">Click a place to zoom into it · drag across the timeline to pick a range · &plus;&#8202;/&#8202;&minus; or scroll to zoom · drag the middle to pan</div>
+  </div>
 
   <script>
     const TIMELINE_ID = {{ timeline_id | tojson }};
-    let map, infoWindow, markers = [];
+    const DAY = 86400000;
+    const MAX_MARKERS = 250;
 
-    function fmtRange(s) {
-      if (s.from && s.to && s.from !== s.to) return `${s.from} → ${s.to}`;
-      return s.from || s.to || "";
+    let map, infoWindow, markers = [], routeLine = null;
+    let POINTS = [], domainMin = 0, domainMax = 0, selStart = 0, selEnd = 0;
+    let gran = "auto", lastClusters = [], activeIdx = -1;
+    const regionNames = (() => {
+      try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch (e) { return null; }
+    })();
+    const countryName = cc => (cc && regionNames && regionNames.of(cc)) || cc || "Unknown";
+
+    // ---- helpers ---------------------------------------------------------
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const frac = ms => (ms - domainMin) / (domainMax - domainMin || 1);
+    const spanDays = () => (selEnd - selStart) / DAY;
+
+    function fmtDate(ms) {
+      return new Date(ms).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    }
+    function fmtRangeMs(a, b) {
+      const da = fmtDate(a), db = fmtDate(b);
+      return da === db ? da : `${da} – ${db}`;
     }
 
-    function popupHtml(s, i) {
-      const parts = [`<strong>${i + 1}. ${s.label ?? ""}</strong>`];
-      const r = fmtRange(s); if (r) parts.push(`<div>${r}</div>`);
-      if (s.photo_count != null) parts.push(`<div>${s.photo_count} photos</div>`);
-      if (s.sample_url) parts.push(`<div><a href="${s.sample_url}" target="_blank" rel="noopener">open in Google Photos</a></div>`);
-      return `<div style="font:13px system-ui;line-height:1.4">${parts.join("")}</div>`;
+    function autoGran(days) {
+      if (days > 120) return "country";
+      if (days > 8) return "city";
+      return "area";
+    }
+    const effGran = () => (gran === "auto" ? autoGran(spanDays()) : gran);
+
+    // Zoom the selected window about a fixed anchor time (keeps `anchor` under the
+    // cursor). factor < 1 zooms in, > 1 zooms out. Shared by ±, scroll, dblclick.
+    function zoomAbout(anchor, factor, fit = true) {
+      const span = selEnd - selStart;
+      const ns = clamp(span * factor, DAY, domainMax - domainMin);
+      const rel = clamp((anchor - selStart) / span, 0, 1);
+      let s = anchor - rel * ns, e = s + ns;
+      if (s < domainMin) { s = domainMin; e = s + ns; }
+      if (e > domainMax) { e = domainMax; s = e - ns; }
+      selStart = s; selEnd = e;
+      render(fit); paintSelection();
+    }
+    const zoomBy = factor => zoomAbout((selStart + selEnd) / 2, factor);
+
+    // ---- clustering ------------------------------------------------------
+    function topKey(counter) {
+      let best = null, bestN = -1;
+      for (const [k, n] of counter) if (n > bestN) { best = k; bestN = n; }
+      return best;
     }
 
+    function summarize(pts, g) {
+      let lat = 0, lng = 0, from = Infinity, to = -Infinity, url = null;
+      const cityCount = new Map();
+      for (const p of pts) {
+        lat += p.lat; lng += p.lng;
+        if (p.ms < from) from = p.ms;
+        if (p.ms > to) to = p.ms;
+        if (!url && p.url) url = p.url;
+        if (p.city) cityCount.set(p.city, (cityCount.get(p.city) || 0) + 1);
+      }
+      const n = pts.length, cc = pts[0].cc, city = topKey(cityCount);
+      const label = g === "country" ? countryName(cc) : (city || countryName(cc));
+      return { label, cc, city, lat: lat / n, lng: lng / n, count: n, from, to, url };
+    }
+
+    // country/city: segment the time-ordered points into contiguous runs so each
+    // *visit* is its own marker (a revisited place appears once per trip), then
+    // absorb sub-day blips bracketed by the same place — the CLAUDE.md recipe.
+    function segmentRuns(points, keyFn) {
+      const runs = [];
+      for (const p of points) {
+        const k = keyFn(p), last = runs[runs.length - 1];
+        if (last && last.key === k) last.pts.push(p);
+        else runs.push({ key: k, pts: [p] });
+      }
+      return runs;
+    }
+    function smoothRuns(runs, minMs) {
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let i = 1; i < runs.length - 1; i++) {
+          const r = runs[i], span = r.pts[r.pts.length - 1].ms - r.pts[0].ms;
+          if (span < minMs && runs[i - 1].key === runs[i + 1].key) {
+            runs[i - 1].pts.push(...r.pts, ...runs[i + 1].pts);
+            runs.splice(i, 2); changed = true; break;
+          }
+        }
+      }
+      const merged = [];
+      for (const r of runs) {
+        const last = merged[merged.length - 1];
+        if (last && last.key === r.key) last.pts.push(...r.pts);
+        else merged.push(r);
+      }
+      return merged;
+    }
+
+    function cluster(points, g) {
+      if (!points.length) return [];
+      let out;
+      if (g === "area") {
+        // short window -> group by a ~1.1 km grid (neighborhoods within a city)
+        const groups = new Map();
+        for (const p of points) {
+          const k = `${Math.round(p.lat * 100) / 100},${Math.round(p.lng * 100) / 100}`;
+          let arr = groups.get(k);
+          if (!arr) groups.set(k, (arr = []));
+          arr.push(p);
+        }
+        out = [...groups.values()].map(pts => summarize(pts, g));
+      } else {
+        // whole-day smoothing keeps borders/transits from fragmenting a trip
+        const keyFn = g === "country" ? p => p.cc || "?" : p => p.city || p.cc || "?";
+        const span = selEnd - selStart;
+        const minMs = Math.min(DAY, span / 8); // gentler when deeply zoomed in
+        out = smoothRuns(segmentRuns(points, keyFn), minMs).map(r => summarize(r.pts, g));
+      }
+      if (out.length > MAX_MARKERS) { // safety cap for grainy views
+        out.sort((a, b) => b.count - a.count);
+        out = out.slice(0, MAX_MARKERS);
+      }
+      out.sort((a, b) => a.from - b.from);
+      return out;
+    }
+
+    function pointsInWindow() {
+      const res = [];
+      for (const p of POINTS) { if (p.ms >= selStart && p.ms <= selEnd) res.push(p); }
+      return res;
+    }
+
+    // ---- map rendering ---------------------------------------------------
+    function markerIcon(count, active) {
+      const r = clamp(9 + Math.sqrt(count) * 1.4, 10, 24);
+      return {
+        path: google.maps.SymbolPath.CIRCLE, scale: r,
+        fillColor: active ? "#ea4335" : "#4285f4", fillOpacity: 0.92,
+        strokeColor: "#fff", strokeWeight: 2,
+      };
+    }
+
+    function clusterPopup(c, i) {
+      const parts = [`<strong>${i + 1}. ${c.label}</strong>`];
+      parts.push(`<div>${fmtRangeMs(c.from, c.to)}</div>`);
+      parts.push(`<div>${c.count} photo${c.count === 1 ? "" : "s"}</div>`);
+      if (c.url) parts.push(`<div><a href="${c.url}" target="_blank" rel="noopener">open in Google Photos</a></div>`);
+      return `<div style="font:13px system-ui;line-height:1.45">${parts.join("")}</div>`;
+    }
+
+    const GRAN_ORDER = ["country", "city", "area"];
+    function syncGranButtons() {
+      document.querySelectorAll("#gran-seg button")
+        .forEach(b => b.classList.toggle("on", b.dataset.g === gran));
+    }
+
+    // Clicking a place drills into it: force the next finer level and narrow the
+    // time window to that place's span, so country → its cities → its areas. At
+    // the finest level there's nothing to drill into, so just show its photos.
+    function drillOrFocus(i) {
+      const c = lastClusters[i];
+      if (!c) return;
+      const cur = effGran();
+      const next = GRAN_ORDER[Math.min(GRAN_ORDER.indexOf(cur) + 1, GRAN_ORDER.length - 1)];
+      if (next === cur) { focusCluster(i, true); return; }
+      gran = next;
+      syncGranButtons();
+      const pad = Math.max(DAY, (c.to - c.from) * 0.04);
+      selStart = clamp(c.from - pad, domainMin, domainMax);
+      selEnd = clamp(c.to + pad, domainMin, domainMax);
+      render(true); paintSelection();
+    }
+
+    function focusCluster(i, pan) {
+      const c = lastClusters[i];
+      if (!c) return;
+      setActive(i);
+      if (pan) map.panTo({ lat: c.lat, lng: c.lng });
+      infoWindow.setContent(clusterPopup(c, i));
+      infoWindow.open(map, markers[i]);
+    }
+
+    function setActive(i) {
+      if (activeIdx === i) return;
+      [activeIdx, i].forEach(j => {
+        const li = document.querySelector(`#places li[data-i="${j}"]`);
+        if (li) li.classList.toggle("active", j === i);
+      });
+      if (markers[activeIdx]) markers[activeIdx].setIcon(markerIcon(lastClusters[activeIdx].count, false));
+      activeIdx = i;
+      if (markers[i]) markers[i].setIcon(markerIcon(lastClusters[i].count, true));
+    }
+
+    function renderMap(clusters, fit) {
+      markers.forEach(m => m.setMap(null));
+      markers = [];
+      if (routeLine) { routeLine.setMap(null); routeLine = null; }
+      activeIdx = -1;
+
+      const bounds = new google.maps.LatLngBounds();
+      const path = [];
+      clusters.forEach((c, i) => {
+        const pos = { lat: c.lat, lng: c.lng };
+        path.push(pos); bounds.extend(pos);
+        const m = new google.maps.Marker({
+          position: pos, map, icon: markerIcon(c.count, false),
+          label: { text: String(i + 1), color: "#fff", fontSize: "11px", fontWeight: "600" },
+          title: c.label,
+        });
+        m.addListener("click", () => drillOrFocus(i));
+        markers.push(m);
+      });
+
+      if (clusters.length >= 2 && clusters.length <= 120) {
+        routeLine = new google.maps.Polyline({
+          path, map, geodesic: true, strokeColor: "#4285f4", strokeOpacity: 0.5, strokeWeight: 2,
+        });
+      }
+      if (fit && clusters.length) {
+        if (clusters.length === 1) { map.setCenter(path[0]); map.setZoom(11); }
+        else map.fitBounds(bounds, 70);
+      }
+    }
+
+    function renderList(clusters) {
+      const ul = document.getElementById("places");
+      ul.innerHTML = "";
+      if (!clusters.length) {
+        ul.innerHTML = `<li class="empty">No photos in this window.</li>`;
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      clusters.forEach((c, i) => {
+        const li = document.createElement("li");
+        li.dataset.i = i;
+        li.innerHTML = `<span class="n">${i + 1}</span><span class="body">`
+          + `<span class="lbl"></span>`
+          + `<span class="meta"></span></span>`;
+        li.querySelector(".lbl").textContent = c.label;
+        li.querySelector(".meta").textContent = `${fmtRangeMs(c.from, c.to)} · ${c.count} photo${c.count === 1 ? "" : "s"}`;
+        li.addEventListener("click", () => drillOrFocus(i));
+        li.addEventListener("mouseenter", () => setActive(i));
+        frag.appendChild(li);
+      });
+      ul.appendChild(frag);
+    }
+
+    function render(fit) {
+      const inWin = pointsInWindow();
+      const g = effGran();
+      const clusters = cluster(inWin, g);
+      lastClusters = clusters;
+      renderList(clusters);
+      renderMap(clusters, fit);
+      // readouts
+      document.getElementById("range-read").textContent = fmtRangeMs(selStart, selEnd);
+      const days = Math.max(1, Math.round(spanDays()));
+      document.getElementById("range-sub").textContent =
+        `${days} day${days === 1 ? "" : "s"} · ${inWin.length} photos`;
+      const gLabel = { country: "countries", city: "cities", area: "areas" }[g];
+      document.getElementById("gran-note").textContent =
+        (gran === "auto" ? `Auto → ${gLabel}` : gLabel);
+      document.getElementById("count-note").textContent =
+        `${clusters.length} place${clusters.length === 1 ? "" : "s"}`;
+      if (fit) writeUrl(); // persist the settled view so it's bookmarkable
+    }
+
+    // Reflect the current window + granularity in the URL. Store exact epoch ms
+    // (safe integers) so a bookmark restores the precise handles, not just the day.
+    // replaceState keeps it live in the address bar without history spam/reloads.
+    function writeUrl() {
+      const p = new URLSearchParams({ from: Math.round(selStart), to: Math.round(selEnd), g: gran });
+      history.replaceState(null, "", `?${p}`);
+    }
+
+    // Parse a URL time param: an epoch-ms integer, or a YYYY-MM-DD fallback (UTC).
+    function parseTimeParam(v) {
+      if (v == null) return NaN;
+      if (/^\d+$/.test(v)) return Number(v);
+      const t = Date.parse(v.length <= 10 ? v + "T00:00Z" : v);
+      return Number.isNaN(t) ? NaN : t;
+    }
+
+    // ---- time strip ------------------------------------------------------
+    function buildHistogram() {
+      const bars = document.getElementById("bars");
+      const nb = 150;
+      const counts = new Array(nb).fill(0);
+      const span = domainMax - domainMin || 1;
+      for (const p of POINTS) {
+        let b = Math.floor(((p.ms - domainMin) / span) * nb);
+        b = clamp(b, 0, nb - 1);
+        counts[b]++;
+      }
+      const max = Math.max(1, ...counts);
+      bars.innerHTML = "";
+      const frag = document.createDocumentFragment();
+      for (const c of counts) {
+        const d = document.createElement("div");
+        d.className = c ? "bar" : "bar empty";
+        d.style.height = `${(c / max) * 100}%`;
+        frag.appendChild(d);
+      }
+      bars.appendChild(frag);
+    }
+
+    function buildAxis() {
+      const axis = document.getElementById("axis");
+      axis.innerHTML = "";
+      const y0 = new Date(domainMin).getUTCFullYear();
+      const y1 = new Date(domainMax).getUTCFullYear();
+      const years = y1 - y0;
+      const monthStep = years >= 4 ? 12 : years >= 2 ? 3 : 1;
+      const start = new Date(Date.UTC(y0, 0, 1));
+      for (let d = new Date(start); d.getTime() <= domainMax; d.setUTCMonth(d.getUTCMonth() + monthStep)) {
+        const ms = d.getTime();
+        if (ms < domainMin) continue;
+        const f = frac(ms);
+        if (f < 0.02 || f > 0.99) continue;
+        const t = document.createElement("div");
+        t.className = "tick";
+        t.style.left = `${f * 100}%`;
+        t.textContent = d.getUTCMonth() === 0
+          ? String(d.getUTCFullYear())
+          : d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+        axis.appendChild(t);
+      }
+    }
+
+    function paintSelection() {
+      const l = frac(selStart) * 100, r = frac(selEnd) * 100;
+      const sel = document.getElementById("sel");
+      sel.style.left = `${l}%`;
+      sel.style.width = `${r - l}%`;
+      const tipL = document.getElementById("tipL"), tipR = document.getElementById("tipR");
+      tipL.style.left = `${l}%`; tipL.textContent = fmtDate(selStart);
+      tipR.style.left = `${r}%`; tipR.textContent = fmtDate(selEnd);
+      // Tint the bars inside the window (accent) vs. outside (dimmed but visible),
+      // so the whole histogram shape stays readable while scrubbing.
+      const bars = document.getElementById("bars").children;
+      const nb = bars.length;
+      const lo = frac(selStart), hi = frac(selEnd);
+      for (let i = 0; i < nb; i++) {
+        const c = (i + 0.5) / nb;
+        bars[i].classList.toggle("inwin", c >= lo && c <= hi);
+      }
+    }
+
+    function setupStrip() {
+      buildHistogram();
+      buildAxis();
+      paintSelection();
+
+      const track = document.getElementById("track");
+      const sel = document.getElementById("sel");
+      let mode = null, grabOffset = 0, rafPending = false;
+      const minGap = DAY; // at least a day wide
+
+      const xToMs = clientX => {
+        const b = track.getBoundingClientRect();
+        return domainMin + clamp((clientX - b.left) / b.width, 0, 1) * (domainMax - domainMin);
+      };
+      const scheduleRender = () => {
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => { rafPending = false; render(false); paintSelection(); });
+      };
+
+      let drawAnchor = 0, prevSel = null;
+      function onMove(e) {
+        const ms = xToMs(e.clientX);
+        if (mode === "L") selStart = clamp(ms, domainMin, selEnd - minGap);
+        else if (mode === "R") selEnd = clamp(ms, selStart + minGap, domainMax);
+        else if (mode === "draw") {
+          selStart = clamp(Math.min(drawAnchor, ms), domainMin, domainMax);
+          selEnd = clamp(Math.max(drawAnchor, ms), domainMin, domainMax);
+        } else if (mode === "band") {
+          const w = selEnd - selStart;
+          const s = clamp(ms - grabOffset, domainMin, domainMax - w);
+          selStart = s; selEnd = s + w;
+        }
+        scheduleRender();
+      }
+      function endDrag() {
+        if (!mode) return;
+        // a draw that never really moved is a stray click — restore the window
+        if (mode === "draw" && selEnd - selStart < minGap && prevSel) {
+          [selStart, selEnd] = prevSel;
+        }
+        mode = null; sel.classList.remove("drag"); track.classList.remove("scrubbing");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", endDrag);
+        render(true); paintSelection(); // refit map only when the drag settles
+      }
+      function begin(m, e) {
+        mode = m;
+        track.classList.add("scrubbing"); // reveal the date bubbles above the handles
+        if (m === "band") { grabOffset = xToMs(e.clientX) - selStart; sel.classList.add("drag"); }
+        if (m === "draw") { drawAnchor = xToMs(e.clientX); prevSel = [selStart, selEnd]; }
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", endDrag);
+        e.preventDefault(); e.stopPropagation();
+      }
+
+      document.getElementById("hL").addEventListener("pointerdown", e => begin("L", e));
+      document.getElementById("hR").addEventListener("pointerdown", e => begin("R", e));
+      sel.addEventListener("pointerdown", e => begin("band", e));
+      // drag across empty track = rubber-band a new selection ("pick start/end")
+      track.addEventListener("pointerdown", e => { if (!e.target.closest("#sel")) begin("draw", e); });
+      // double-click zooms in about the cursor
+      track.addEventListener("dblclick", e => zoomAbout(xToMs(e.clientX), 0.5));
+
+      // scroll to zoom about the cursor (bonus gesture on top of the ± buttons)
+      let fitTimer = null;
+      track.addEventListener("wheel", e => {
+        e.preventDefault();
+        zoomAbout(xToMs(e.clientX), e.deltaY < 0 ? 0.8 : 1.25, false);
+        if (fitTimer) clearTimeout(fitTimer);
+        fitTimer = setTimeout(() => render(true), 180); // refit map once scrolling settles
+      }, { passive: false });
+
+      window.addEventListener("resize", () => { buildAxis(); paintSelection(); });
+    }
+
+    // ---- granularity + zoom + reset controls -----------------------------
+    function setupControls() {
+      document.querySelectorAll("#gran-seg button").forEach(btn => {
+        btn.addEventListener("click", () => { gran = btn.dataset.g; syncGranButtons(); render(true); });
+      });
+      document.getElementById("zoomin").addEventListener("click", () => zoomBy(0.5));
+      document.getElementById("zoomout").addEventListener("click", () => zoomBy(2));
+      document.getElementById("reset").addEventListener("click", () => {
+        gran = "auto"; syncGranButtons();
+        selStart = domainMin; selEnd = domainMax;
+        render(true); paintSelection();
+      });
+    }
+
+    // ---- boot ------------------------------------------------------------
     async function initMap() {
       map = new google.maps.Map(document.getElementById("map"), {
         center: { lat: 20, lng: 0 }, zoom: 2, mapTypeControl: false, streetViewControl: false,
+        fullscreenControl: false,
       });
       infoWindow = new google.maps.InfoWindow();
+      map.addListener("click", () => { setActive(-1); infoWindow.close(); });
 
       let data;
       try {
-        const res = await fetch(`/timeline/${TIMELINE_ID}.json`);
+        // cache-bust our own data so a rebuilt timeline always reloads fresh
+        const res = await fetch(`/timeline/${TIMELINE_ID}.json?v=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         data = await res.json();
       } catch (e) {
         return showError(`Could not load timeline data: ${e.message}`);
       }
-
       document.getElementById("ptitle").textContent = data.title || TIMELINE_ID;
+
+      if (Array.isArray(data.points) && data.points.length) {
+        bootPoints(data);
+      } else {
+        bootStaysFallback(data);
+      }
+    }
+
+    function bootPoints(data) {
+      const F = data.point_fields || ["t", "lat", "lng", "cc", "city", "photo_id"];
+      const ix = Object.fromEntries(F.map((f, i) => [f, i]));
+      const prefix = data.photo_url_prefix || "";
+      POINTS = [];
+      for (const row of data.points) {
+        const lat = row[ix.lat], lng = row[ix.lng];
+        if (lat == null || lng == null) continue;
+        const ms = new Date(row[ix.t] + (String(row[ix.t]).length <= 10 ? "T00:00Z" : "Z")).getTime();
+        if (Number.isNaN(ms)) continue;
+        const pid = row[ix.photo_id];
+        const url = pid ? (String(pid).startsWith("http") ? pid : prefix + pid) : null;
+        POINTS.push({ ms, lat, lng, cc: row[ix.cc], city: row[ix.city], url });
+      }
+      POINTS.sort((a, b) => a.ms - b.ms);
+      if (!POINTS.length) return showError("This timeline has no located photos to plot.");
+
+      domainMin = POINTS[0].ms;
+      domainMax = POINTS[POINTS.length - 1].ms;
+      selStart = domainMin; selEnd = domainMax;
+      applyUrlState(); // restore a bookmarked window + granularity, if present
+
+      setupStrip();
+      setupControls();
+      render(true);
+    }
+
+    // Initialize the window + granularity from ?from&to&g (clamped to the data).
+    function applyUrlState() {
+      const q = new URLSearchParams(location.search);
+      const from = parseTimeParam(q.get("from")), to = parseTimeParam(q.get("to"));
+      if (!Number.isNaN(from) && !Number.isNaN(to) && to > from) {
+        selStart = clamp(Math.min(from, to), domainMin, domainMax);
+        selEnd = clamp(Math.max(from, to), domainMin, domainMax);
+      }
+      const g = q.get("g");
+      if (["auto", "country", "city", "area"].includes(g)) { gran = g; syncGranButtons(); }
+    }
+
+    // Backward-compat: old timelines without a points payload -> static stays.
+    function bootStaysFallback(data) {
+      document.getElementById("strip").style.display = "none";
       const stays = (data.stays || []).filter(s => s.lat != null && s.lng != null);
       if (!stays.length) return showError("This timeline has no located stays to plot.");
-
-      const bounds = new google.maps.LatLngBounds();
-      const list = document.getElementById("stays");
-      const path = [];
-
-      stays.forEach((s, i) => {
-        const pos = { lat: s.lat, lng: s.lng };
-        path.push(pos);
-        bounds.extend(pos);
-
-        const marker = new google.maps.Marker({
-          position: pos, map, label: { text: String(i + 1), color: "#fff", fontSize: "12px" },
-          title: s.label || "",
-        });
-        marker.addListener("click", () => {
-          infoWindow.setContent(popupHtml(s, i));
-          infoWindow.open(map, marker);
-        });
-        markers.push(marker);
-
-        const li = document.createElement("li");
-        li.innerHTML = `<span class="n">${i + 1}</span><span><span class="lbl">${s.label ?? ""}</span>`
-          + `<span class="dt">${fmtRange(s)}</span></span>`;
-        li.addEventListener("click", () => {
-          map.panTo(pos);
-          infoWindow.setContent(popupHtml(s, i));
-          infoWindow.open(map, marker);
-        });
-        list.appendChild(li);
-      });
-
-      new google.maps.Polyline({
-        path, map, geodesic: true, strokeColor: "#4285f4", strokeOpacity: 0.85, strokeWeight: 2.5,
-      });
-
-      if (stays.length === 1) { map.setCenter(path[0]); map.setZoom(9); }
-      else map.fitBounds(bounds, 60);
+      lastClusters = stays.map(s => ({
+        label: s.label ?? "", lat: s.lat, lng: s.lng, count: s.photo_count ?? 0,
+        from: Date.parse(s.from || s.to || 0), to: Date.parse(s.to || s.from || 0),
+        url: s.sample_url || null, cc: s.label, city: s.label,
+      }));
+      renderList(lastClusters);
+      renderMap(lastClusters, true);
+      document.getElementById("gran-note").textContent = "stays";
+      document.getElementById("count-note").textContent = `${lastClusters.length} stays`;
     }
 
     function showError(msg) {
       const el = document.getElementById("err");
       el.textContent = msg; el.style.display = "grid";
     }
-    // Surface Google's own auth/referrer failures (otherwise just a blank map).
     window.gm_authFailure = () =>
       showError("Google Maps rejected the API key (check referrer restrictions / billing).");
   </script>

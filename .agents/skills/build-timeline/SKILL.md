@@ -28,7 +28,9 @@ the user until they're happy, then persist it as JSON for the map viewer.
 4. **Write ONLY on explicit confirmation** ("looks good", "save it", "yes"). Never
    write `userdata/timelines/<id>.json` before the user approves the current draft.
 5. Tell the user it's saved and how to view it: `track-me serve` →
-   `http://localhost:5000`.
+   `http://localhost:5000`. `--write` embeds a per-photo `points` payload so the
+   viewer's time-slider can re-cluster country → city → neighborhood on the fly;
+   pass `--no-points` only if a lighter, static file is wanted.
 
 **Confirmation gate is the core contract of this skill: preview first, write last.**
 
