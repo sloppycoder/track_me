@@ -30,7 +30,8 @@ echo "GOOGLE_MAPS_API_KEY=..." > .env     # needed for the geocode step + the vi
 ```
 
 Local state (SQLite DB, thumbnails, timelines) lives under `userdata/` and is
-gitignored. The schema is created automatically on first use — no migrations.
+gitignored. Point it elsewhere with `TRACKME_USERDATA` (default `./userdata`).
+The schema is created automatically on first use — no migrations.
 
 ## The pipeline
 

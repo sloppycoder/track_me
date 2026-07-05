@@ -17,7 +17,9 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 # Single local-state root: DB + generated output (thumbnails, timelines).
-USERDATA_DIR = Path(os.getenv("USERDATA_DIR", str(BASE_DIR / "userdata")))
+# Override with TRACKME_USERDATA (default ./userdata, relative to the CWD).
+# The older USERDATA_DIR name is still honored as a fallback.
+USERDATA_DIR = Path(os.getenv("TRACKME_USERDATA") or os.getenv("USERDATA_DIR") or "userdata")
 
 DB_PATH = Path(os.getenv("DB_PATH", str(USERDATA_DIR / "track_me.db")))
 # Preserved copy of the old Django DB, kept for the old-vs-new comparison.
