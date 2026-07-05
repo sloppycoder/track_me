@@ -48,7 +48,8 @@ USER app
 EXPOSE 8080
 
 # Cloud Run sets $PORT (default 8080). Serve the Flask WSGI app with gunicorn.
-# Shell form so $PORT expands. A single worker keeps the SQLite / gcsfuse reads
-# simple; bump --workers/--threads if you need more concurrency.
-CMD exec gunicorn --bind ":$PORT" --workers 1 --threads 8 --timeout 60 \
-    track_me.viewer.app:app
+# JSON (exec) form to satisfy the buildkit CMD lint; `sh -c` still expands $PORT,
+# and `exec` replaces the shell so gunicorn is PID 1 and receives OS signals.
+# A single worker keeps the SQLite / gcsfuse reads simple; bump --workers/--threads
+# if you need more concurrency.
+CMD ["sh", "-c", "exec gunicorn --bind \":$PORT\" --workers 1 --threads 8 --timeout 60 track_me.viewer.app:app"]
