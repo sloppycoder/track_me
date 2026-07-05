@@ -19,7 +19,13 @@ load_dotenv(dotenv_path=BASE_DIR / ".env")
 # Single local-state root: DB + generated output (thumbnails, timelines).
 # Override with TRACKME_USERDATA (default ./userdata, relative to the CWD).
 # The older USERDATA_DIR name is still honored as a fallback.
-USERDATA_DIR = Path(os.getenv("TRACKME_USERDATA") or os.getenv("USERDATA_DIR") or "userdata")
+# Resolved to an absolute path: Flask's send_from_directory (the viewer's
+# /timeline/<id>.json route) resolves a *relative* dir against the package
+# root_path, not the CWD, so a relative userdata dir would 404 there while the
+# CWD-relative .glob() index still found the files. Absolute keeps them in sync.
+USERDATA_DIR = Path(
+    os.getenv("TRACKME_USERDATA") or os.getenv("USERDATA_DIR") or "userdata"
+).resolve()
 
 DB_PATH = Path(os.getenv("DB_PATH", str(USERDATA_DIR / "track_me.db")))
 # Preserved copy of the old Django DB, kept for the old-vs-new comparison.
@@ -30,7 +36,9 @@ THUMBNAIL_SIZE = (
     int(os.getenv("THUMBNAIL_WIDTH", "300")),
     int(os.getenv("THUMBNAIL_HEIGHT", "200")),
 )
-TIMELINES_DIR = Path(os.getenv("TIMELINES_DIR", str(USERDATA_DIR / "timelines")))
+# .resolve() so a relative TIMELINES_DIR override still lands as absolute (see
+# the USERDATA_DIR note above — this dir is served via Flask send_from_directory).
+TIMELINES_DIR = Path(os.getenv("TIMELINES_DIR", str(USERDATA_DIR / "timelines"))).resolve()
 
 # --- ingest / geocode ----------------------------------------------------
 PHOTOS_BASE_DIR = Path(os.path.expanduser(os.getenv("PHOTOS_BASE_DIR", "~/tmp")))
