@@ -31,7 +31,12 @@
     #sidebar h1 .back { color: #fff; text-decoration: none; opacity: .9; font-weight: 400; }
     #sidebar h1 .ttl { flex: 1; min-width: 0; }
     #subhead { padding: .4rem .85rem; font-size: .78rem; color: var(--muted);
-      border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: .5rem; }
+      border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: .5rem;
+      align-items: baseline; }
+    .sub-left { display: flex; align-items: baseline; gap: .5rem; min-width: 0; }
+    #drill-back { border: 0; background: transparent; padding: 0; font: inherit; font-size: .78rem;
+      color: var(--accent); cursor: pointer; font-weight: 600; white-space: nowrap; }
+    #drill-back:hover { text-decoration: underline; }
     #places { list-style: none; margin: 0; padding: .25rem 0; overflow-y: auto; }
     #places li { padding: .38rem .85rem; cursor: pointer; display: flex; gap: .6rem; align-items: baseline; }
     #places li:hover, #places li.active { background: #4285f416; }
@@ -103,7 +108,13 @@
     <div id="sidebar">
       <h1><a class="back" href="/" title="All timelines">&larr;</a>
         <span class="ttl" id="ptitle">Timeline</span></h1>
-      <div id="subhead"><span id="gran-note">—</span><span id="count-note"></span></div>
+      <div id="subhead">
+        <span class="sub-left">
+          <button id="drill-back" hidden>← Back</button>
+          <span id="gran-note">—</span>
+        </span>
+        <span id="count-note"></span>
+      </div>
       <ul id="places"></ul>
     </div>
     <div id="err"></div>
@@ -147,6 +158,7 @@
     let map, infoWindow, markers = [], routeLine = null;
     let POINTS = [], domainMin = 0, domainMax = 0, selStart = 0, selEnd = 0;
     let gran = "auto", lastClusters = [], activeIdx = -1;
+    let drillStack = [];   // prior {gran, window} states, for the ← Back button
     const regionNames = (() => {
       try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch (e) { return null; }
     })();
@@ -308,12 +320,32 @@
       const cur = effGran();
       const next = GRAN_ORDER[Math.min(GRAN_ORDER.indexOf(cur) + 1, GRAN_ORDER.length - 1)];
       if (next === cur) { focusCluster(i, true); return; }
+      // remember where we came from so ← Back can restore level + window
+      drillStack.push({ gran, selStart, selEnd,
+        backLabel: { country: "countries", city: "cities", area: "areas" }[cur] });
       gran = next;
       syncGranButtons();
       const pad = Math.max(DAY, (c.to - c.from) * 0.04);
       selStart = clamp(c.from - pad, domainMin, domainMax);
       selEnd = clamp(c.to + pad, domainMin, domainMax);
-      render(true); paintSelection();
+      render(true); paintSelection(); syncDrillBack();
+    }
+
+    // Pop one drill step: restore the granularity + time window we drilled from.
+    function goDrillBack() {
+      const s = drillStack.pop();
+      if (!s) return;
+      gran = s.gran; selStart = s.selStart; selEnd = s.selEnd;
+      syncGranButtons(); render(true); paintSelection(); syncDrillBack();
+    }
+
+    // Show the ← Back button (labelled with the level it returns to) only while
+    // there's a drill step to undo.
+    function syncDrillBack() {
+      const btn = document.getElementById("drill-back");
+      const top = drillStack[drillStack.length - 1];
+      btn.hidden = !top;
+      if (top) btn.textContent = `← ${top.backLabel}`;
     }
 
     function focusCluster(i, pan) {
@@ -570,12 +602,18 @@
     // ---- granularity + zoom + reset controls -----------------------------
     function setupControls() {
       document.querySelectorAll("#gran-seg button").forEach(btn => {
-        btn.addEventListener("click", () => { gran = btn.dataset.g; syncGranButtons(); render(true); });
+        btn.addEventListener("click", () => {
+          gran = btn.dataset.g; syncGranButtons();
+          drillStack = []; syncDrillBack();   // manual level pick ends the drill lineage
+          render(true);
+        });
       });
+      document.getElementById("drill-back").addEventListener("click", goDrillBack);
       document.getElementById("zoomin").addEventListener("click", () => zoomBy(0.5));
       document.getElementById("zoomout").addEventListener("click", () => zoomBy(2));
       document.getElementById("reset").addEventListener("click", () => {
         gran = "auto"; syncGranButtons();
+        drillStack = []; syncDrillBack();
         selStart = domainMin; selEnd = domainMax;
         render(true); paintSelection();
       });
