@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Build a timeline</title>
+  <style>
+    :root {
+      --accent: #4285f4;
+      --panel-bg: #ffffff;
+      --ink: #1a1a1a;
+      --muted: #6b7280;
+      --line: #e3e6ea;
+      --bar-out: #d3dae4;   /* histogram outside the selection (dimmed) */
+      --bar-in: #6b9bec;    /* histogram inside the selection */
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { display: grid; grid-template-rows: 1fr auto; font: 14px/1.45 system-ui, sans-serif;
+      color: var(--ink); }
+
+    /* --- map + overlays --- */
+    #stage { position: relative; min-height: 0; }
+    #map { position: absolute; inset: 0; }
+
+    #sidebar { position: absolute; top: 12px; left: 12px; z-index: 5; width: 20rem; max-width: 82vw;
+      background: var(--panel-bg); border-radius: .7rem; box-shadow: 0 4px 18px #0002;
+      overflow: hidden; display: flex; flex-direction: column; max-height: calc(100% - 24px); }
+    #sidebar h1 { font-size: .98rem; margin: 0; padding: .65rem .85rem; background: var(--accent);
+      color: #fff; display: flex; align-items: baseline; gap: .5rem; font-weight: 600; }
+    #sidebar h1 .back { color: #fff; text-decoration: none; opacity: .9; font-weight: 400; }
+    #sidebar h1 .ttl { flex: 1; min-width: 0; }
+
+    #controls { padding: .7rem .85rem .3rem; border-bottom: 1px solid var(--line);
+      overflow-y: auto; }
+    #controls .row { margin-bottom: .7rem; }
+    #controls label.field { display: block; font-size: .76rem; color: var(--muted);
+      margin-bottom: .25rem; text-transform: uppercase; letter-spacing: .02em; }
+    #controls input[type=text] { width: 100%; padding: .42rem .55rem; font: inherit;
+      border: 1px solid var(--line); border-radius: .45rem; background: transparent; color: inherit; }
+    #controls input[type=text]:focus { outline: none; border-color: var(--accent); }
+    #controls .rowhead { display: flex; justify-content: space-between; align-items: baseline; }
+    #controls .val { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    #controls input[type=range] { width: 100%; accent-color: var(--accent); margin: .15rem 0 0; }
+    #controls .row.disabled { opacity: .4; pointer-events: none; }
+
+    .seg { display: inline-flex; border: 1px solid var(--line); border-radius: .45rem; overflow: hidden; }
+    .seg button { border: 0; background: transparent; padding: .3rem .7rem; font: inherit;
+      font-size: .82rem; cursor: pointer; color: var(--muted); }
+    .seg button.on { background: var(--accent); color: #fff; }
+    .seg button + button { border-left: 1px solid var(--line); }
+
+    #regions { display: flex; flex-wrap: wrap; gap: .3rem; }
+    .chip { border: 1px solid var(--line); border-radius: 1rem; padding: .2rem .6rem; font-size: .78rem;
+      cursor: pointer; color: var(--muted); background: transparent; user-select: none; }
+    .chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+    #regions .none { color: var(--muted); font-size: .78rem; }
+
+    #save { width: 100%; padding: .5rem; font: inherit; font-weight: 600; cursor: pointer;
+      background: var(--accent); color: #fff; border: 0; border-radius: .45rem; }
+    #save:disabled { opacity: .5; cursor: default; }
+    #save-status { font-size: .78rem; color: var(--muted); margin-top: .3rem; min-height: 1rem; }
+    #save-status.err { color: #b00; }
+
+    #subhead { padding: .4rem .85rem; font-size: .78rem; color: var(--muted);
+      border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: .5rem; }
+    #places { list-style: none; margin: 0; padding: .25rem 0; overflow-y: auto; }
+    #places li { padding: .38rem .85rem; cursor: pointer; display: flex; gap: .6rem; align-items: baseline; }
+    #places li:hover, #places li.active { background: #4285f416; }
+    #places .n { display: inline-flex; align-items: center; justify-content: center;
+      min-width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--accent); color: #fff;
+      font-size: .72rem; font-weight: 600; flex: 0 0 auto; }
+    #places .body { min-width: 0; }
+    #places .lbl { font-weight: 600; }
+    #places .meta { display: block; font-size: .76rem; color: var(--muted); }
+    #places .empty { padding: .8rem .85rem; color: var(--muted); }
+
+    /* --- bottom time strip --- */
+    #strip { background: var(--panel-bg); border-top: 1px solid var(--line);
+      padding: .55rem .9rem .7rem; box-shadow: 0 -2px 12px #0001; user-select: none; }
+    #striphead { display: flex; align-items: center; gap: .75rem; margin-bottom: .35rem;
+      flex-wrap: wrap; }
+    #range-read { font-weight: 600; }
+    #range-sub { color: var(--muted); font-size: .82rem; }
+    #striphead .spacer { flex: 1; }
+    #reset { border: 1px solid var(--line); background: transparent; border-radius: .45rem;
+      padding: .28rem .6rem; font: inherit; font-size: .8rem; cursor: pointer; color: var(--muted); }
+    #reset:hover { background: #0000000a; }
+
+    #track { position: relative; height: 96px; margin-top: .2rem; cursor: crosshair;
+      border-radius: .4rem; overflow: hidden; background: #f6f8fa; }
+    #bars { position: absolute; inset: 0; display: flex; align-items: flex-end; gap: 1px;
+      padding: 4px 0 16px; pointer-events: none; }
+    #bars .bar { flex: 1 1 0; background: var(--bar-out); border-radius: 1px 1px 0 0;
+      min-height: 1px; transition: background .08s; }
+    #bars .bar.inwin { background: var(--bar-in); }
+    #bars .bar.empty { background: transparent; }
+    #axis { position: absolute; left: 0; right: 0; bottom: 0; height: 15px; pointer-events: none; }
+    #axis .tick { position: absolute; bottom: 0; font-size: .66rem; color: var(--muted);
+      transform: translateX(-50%); white-space: nowrap; }
+    #axis .tick::before { content: ""; position: absolute; top: -3px; left: 50%; width: 1px;
+      height: 3px; background: var(--line); }
+    #hint { margin-top: .35rem; font-size: .74rem; color: var(--muted); text-align: center; }
+    .tip { position: absolute; top: 3px; transform: translateX(-50%); z-index: 6;
+      background: var(--accent); color: #fff; font-size: .72rem; font-weight: 600;
+      padding: .1rem .42rem; border-radius: .35rem; white-space: nowrap; pointer-events: none;
+      opacity: 0; transition: opacity .1s; box-shadow: 0 1px 4px #0005; }
+    #track.scrubbing .tip { opacity: 1; }
+    #sel { position: absolute; top: 0; bottom: 15px; background: #4285f41f; cursor: grab;
+      box-shadow: inset 0 0 0 1px #4285f455; }
+    #sel.drag { cursor: grabbing; }
+    .handle { position: absolute; top: 0; bottom: 0; width: 20px; cursor: ew-resize; z-index: 4;
+      display: flex; align-items: center; justify-content: center; }
+    .handle::after { content: ""; width: 6px; height: 72%; background: var(--accent);
+      border-radius: 4px; box-shadow: 0 0 0 2px #fff, 0 1px 3px #0004; }
+    #hL { left: 0; } #hR { right: 0; }
+
+    #err { position: absolute; inset: 0; display: none; place-content: center; text-align: center;
+      font: 15px system-ui, sans-serif; padding: 2rem; color: #b00; z-index: 9; background: #fff; }
+    @media (max-width: 560px) { #sidebar { width: 15rem; } }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="map"></div>
+    <div id="sidebar">
+      <h1><a class="back" href="/" title="All timelines">&larr;</a>
+        <span class="ttl">Build a timeline</span></h1>
+
+      <div id="controls">
+        <div class="row">
+          <label class="field" for="title">Title</label>
+          <input type="text" id="title" placeholder="e.g. Countries visited in 2019" autocomplete="off">
+        </div>
+
+        <div class="row">
+          <label class="field">Level</label>
+          <span class="seg" id="level-seg">
+            <button data-level="country" class="on">Country</button>
+            <button data-level="city">City</button>
+          </span>
+        </div>
+
+        <div class="row" id="mergekm-row">
+          <div class="rowhead">
+            <label class="field" for="merge-km">Metro merge radius</label>
+            <span class="val"><span id="merge-km-val">50</span> km</span>
+          </div>
+          <input type="range" id="merge-km" min="5" max="200" step="5" value="50">
+        </div>
+
+        <div class="row">
+          <div class="rowhead">
+            <label class="field" for="min-hours">Blip smoothing</label>
+            <span class="val"><span id="min-hours-val">24</span> h</span>
+          </div>
+          <input type="range" id="min-hours" min="0" max="72" step="1" value="24">
+        </div>
+
+        <div class="row">
+          <label class="field">Regions</label>
+          <div id="regions"><span class="none">all</span></div>
+        </div>
+
+        <div class="row">
+          <button id="save" disabled>Save timeline</button>
+          <div id="save-status"></div>
+        </div>
+      </div>
+
+      <div id="subhead"><span id="gran-note">—</span><span id="count-note"></span></div>
+      <ul id="places"></ul>
+    </div>
+    <div id="err"></div>
+  </div>
+
+  <div id="strip">
+    <div id="striphead">
+      <span id="range-read">—</span>
+      <span id="range-sub"></span>
+      <span class="spacer"></span>
+      <button id="reset">Reset range</button>
+    </div>
+    <div id="track">
+      <div id="bars"></div>
+      <div id="sel">
+        <div class="handle" id="hL"></div>
+        <div class="handle" id="hR"></div>
+      </div>
+      <div id="axis"></div>
+      <div class="tip" id="tipL"></div>
+      <div class="tip" id="tipR"></div>
+    </div>
+    <div id="hint">Drag across the timeline to pick a date range · tune the knobs above · then Save</div>
+  </div>
+
+  <script>
+    const PREFILL = {{ build | tojson }};
+    const DAY = 86400000;
+    const MAX_MARKERS = 250;
+
+    let map, infoWindow, markers = [], routeLine = null;
+    let POINTS = [], domainMin = 0, domainMax = 0, selStart = 0, selEnd = 0;
+    let lastStays = [], activeIdx = -1;
+    let level = "country", mergeKm = 50, minHours = 24;
+    let selectedRegions = new Set();   // empty = all
+    let allRegions = [];               // fixed chip list from the first load
+
+    const regionNames = (() => {
+      try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch (e) { return null; }
+    })();
+    const countryName = cc => (cc && regionNames && regionNames.of(cc)) || cc || "Unknown";
+
+    // ---- helpers ---------------------------------------------------------
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const frac = ms => (ms - domainMin) / (domainMax - domainMin || 1);
+    const spanDays = () => (selEnd - selStart) / DAY;
+
+    function fmtDate(ms) {
+      return new Date(ms).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    }
+    function fmtRangeMs(a, b) {
+      const da = fmtDate(a), db = fmtDate(b);
+      return da === db ? da : `${da} – ${db}`;
+    }
+    // ISO calendar day (UTC) for a slider position. `end` is padded +1 day so the
+    // selected end day is included (load_points treats end as exclusive).
+    function msToDate(ms) { return new Date(ms).toISOString().slice(0, 10); }
+    const winStart = () => msToDate(selStart);
+    const winEnd = () => msToDate(selEnd + DAY);
+
+    // ---- map rendering ---------------------------------------------------
+    function markerIcon(count, active) {
+      const r = clamp(9 + Math.sqrt(count) * 1.4, 10, 24);
+      return {
+        path: google.maps.SymbolPath.CIRCLE, scale: r,
+        fillColor: active ? "#ea4335" : "#4285f4", fillOpacity: 0.92,
+        strokeColor: "#fff", strokeWeight: 2,
+      };
+    }
+
+    function stayPopup(s, i) {
+      const parts = [`<strong>${i + 1}. ${s.label}</strong>`];
+      parts.push(`<div>${s.from === s.to ? s.from : `${s.from} – ${s.to}`}</div>`);
+      parts.push(`<div>${s.photo_count} photo${s.photo_count === 1 ? "" : "s"}</div>`);
+      if (s.sample_url) parts.push(`<div><a href="${s.sample_url}" target="_blank" rel="noopener">open in Google Photos</a></div>`);
+      return `<div style="font:13px system-ui;line-height:1.45">${parts.join("")}</div>`;
+    }
+
+    function setActive(i) {
+      if (activeIdx === i) return;
+      [activeIdx, i].forEach(j => {
+        const li = document.querySelector(`#places li[data-i="${j}"]`);
+        if (li) li.classList.toggle("active", j === i);
+      });
+      if (markers[activeIdx]) markers[activeIdx].setIcon(markerIcon(lastStays[activeIdx].photo_count, false));
+      activeIdx = i;
+      if (markers[i]) markers[i].setIcon(markerIcon(lastStays[i].photo_count, true));
+    }
+
+    // In the builder a click just focuses the stay (pan + popup) — no drill.
+    function focusStay(i, pan) {
+      const s = lastStays[i];
+      if (!s) return;
+      setActive(i);
+      if (pan) map.panTo({ lat: s.lat, lng: s.lng });
+      infoWindow.setContent(stayPopup(s, i));
+      infoWindow.open(map, markers[i]);
+    }
+
+    function renderMap(stays, fit) {
+      markers.forEach(m => m.setMap(null));
+      markers = [];
+      if (routeLine) { routeLine.setMap(null); routeLine = null; }
+      activeIdx = -1;
+
+      const plotted = stays.filter(s => s.lat != null && s.lng != null).slice(0, MAX_MARKERS);
+      const bounds = new google.maps.LatLngBounds();
+      const path = [];
+      plotted.forEach((s, i) => {
+        const pos = { lat: s.lat, lng: s.lng };
+        path.push(pos); bounds.extend(pos);
+        const m = new google.maps.Marker({
+          position: pos, map, icon: markerIcon(s.photo_count, false),
+          label: { text: String(i + 1), color: "#fff", fontSize: "11px", fontWeight: "600" },
+          title: s.label,
+        });
+        m.addListener("click", () => focusStay(i, true));
+        markers.push(m);
+      });
+
+      if (plotted.length >= 2 && plotted.length <= 120) {
+        routeLine = new google.maps.Polyline({
+          path, map, geodesic: true, strokeColor: "#4285f4", strokeOpacity: 0.5, strokeWeight: 2,
+        });
+      }
+      if (fit && plotted.length) {
+        if (plotted.length === 1) { map.setCenter(path[0]); map.setZoom(11); }
+        else map.fitBounds(bounds, 70);
+      }
+    }
+
+    function renderList(stays) {
+      const ul = document.getElementById("places");
+      ul.innerHTML = "";
+      if (!stays.length) {
+        ul.innerHTML = `<li class="empty">No stays for these settings.</li>`;
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      stays.forEach((s, i) => {
+        const li = document.createElement("li");
+        li.dataset.i = i;
+        li.innerHTML = `<span class="n">${i + 1}</span><span class="body">`
+          + `<span class="lbl"></span><span class="meta"></span></span>`;
+        li.querySelector(".lbl").textContent = s.label;
+        const rng = s.from === s.to ? s.from : `${s.from} – ${s.to}`;
+        li.querySelector(".meta").textContent = `${rng} · ${s.photo_count} photo${s.photo_count === 1 ? "" : "s"}`;
+        li.addEventListener("click", () => focusStay(i, true));
+        li.addEventListener("mouseenter", () => setActive(i));
+        frag.appendChild(li);
+      });
+      ul.appendChild(frag);
+    }
+
+    // ---- preview (server-computed stays) ---------------------------------
+    let previewTimer = null, previewSeq = 0;
+    function requestPreview(fit) {
+      if (!POINTS.length) return;
+      if (previewTimer) clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => runPreview(fit), 140);
+    }
+    async function runPreview(fit) {
+      const seq = ++previewSeq;
+      const q = new URLSearchParams({
+        start: winStart(), end: winEnd(), level,
+        merge_km: String(mergeKm), min_hours: String(minHours),
+      });
+      selectedRegions.forEach(cc => q.append("region", cc));
+      let data;
+      try {
+        const res = await fetch(`/api/preview?${q}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      } catch (e) {
+        return showError(`Preview failed: ${e.message}`);
+      }
+      if (seq !== previewSeq) return; // a newer request superseded this one
+      lastStays = data.stays || [];
+      renderList(lastStays);
+      renderMap(lastStays, fit);
+      document.getElementById("count-note").textContent =
+        `${lastStays.length} stay${lastStays.length === 1 ? "" : "s"}`;
+      updateSaveEnabled();
+    }
+
+    function updateSaveEnabled() {
+      const ok = document.getElementById("title").value.trim() && lastStays.length;
+      document.getElementById("save").disabled = !ok;
+    }
+
+    // ---- time strip (histogram + scrubber) -------------------------------
+    function buildHistogram() {
+      const bars = document.getElementById("bars");
+      const nb = 150;
+      const counts = new Array(nb).fill(0);
+      const span = domainMax - domainMin || 1;
+      for (const p of POINTS) {
+        let b = Math.floor(((p.ms - domainMin) / span) * nb);
+        b = clamp(b, 0, nb - 1);
+        counts[b]++;
+      }
+      const max = Math.max(1, ...counts);
+      bars.innerHTML = "";
+      const frag = document.createDocumentFragment();
+      for (const c of counts) {
+        const d = document.createElement("div");
+        d.className = c ? "bar" : "bar empty";
+        d.style.height = `${(c / max) * 100}%`;
+        frag.appendChild(d);
+      }
+      bars.appendChild(frag);
+    }
+
+    function buildAxis() {
+      const axis = document.getElementById("axis");
+      axis.innerHTML = "";
+      const y0 = new Date(domainMin).getUTCFullYear();
+      const y1 = new Date(domainMax).getUTCFullYear();
+      const years = y1 - y0;
+      const monthStep = years >= 4 ? 12 : years >= 2 ? 3 : 1;
+      const start = new Date(Date.UTC(y0, 0, 1));
+      for (let d = new Date(start); d.getTime() <= domainMax; d.setUTCMonth(d.getUTCMonth() + monthStep)) {
+        const ms = d.getTime();
+        if (ms < domainMin) continue;
+        const f = frac(ms);
+        if (f < 0.02 || f > 0.99) continue;
+        const t = document.createElement("div");
+        t.className = "tick";
+        t.style.left = `${f * 100}%`;
+        t.textContent = d.getUTCMonth() === 0
+          ? String(d.getUTCFullYear())
+          : d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+        axis.appendChild(t);
+      }
+    }
+
+    function paintSelection() {
+      const l = frac(selStart) * 100, r = frac(selEnd) * 100;
+      const sel = document.getElementById("sel");
+      sel.style.left = `${l}%`;
+      sel.style.width = `${r - l}%`;
+      const tipL = document.getElementById("tipL"), tipR = document.getElementById("tipR");
+      tipL.style.left = `${l}%`; tipL.textContent = fmtDate(selStart);
+      tipR.style.left = `${r}%`; tipR.textContent = fmtDate(selEnd);
+      const bars = document.getElementById("bars").children;
+      const nb = bars.length;
+      const lo = frac(selStart), hi = frac(selEnd);
+      for (let i = 0; i < nb; i++) {
+        const c = (i + 0.5) / nb;
+        bars[i].classList.toggle("inwin", c >= lo && c <= hi);
+      }
+    }
+
+    function refreshReadouts() {
+      document.getElementById("range-read").textContent = fmtRangeMs(selStart, selEnd);
+      let inWin = 0;
+      for (const p of POINTS) { if (p.ms >= selStart && p.ms <= selEnd) inWin++; }
+      const days = Math.max(1, Math.round(spanDays()));
+      document.getElementById("range-sub").textContent =
+        `${days} day${days === 1 ? "" : "s"} · ${inWin} photos`;
+    }
+
+    function setupStrip() {
+      buildHistogram();
+      buildAxis();
+      paintSelection();
+      refreshReadouts();
+
+      const track = document.getElementById("track");
+      const sel = document.getElementById("sel");
+      let mode = null, grabOffset = 0, rafPending = false;
+      const minGap = DAY;
+
+      const xToMs = clientX => {
+        const b = track.getBoundingClientRect();
+        return domainMin + clamp((clientX - b.left) / b.width, 0, 1) * (domainMax - domainMin);
+      };
+      const scheduleRepaint = () => {
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => { rafPending = false; paintSelection(); refreshReadouts(); });
+      };
+
+      let drawAnchor = 0, prevSel = null;
+      function onMove(e) {
+        const ms = xToMs(e.clientX);
+        if (mode === "L") selStart = clamp(ms, domainMin, selEnd - minGap);
+        else if (mode === "R") selEnd = clamp(ms, selStart + minGap, domainMax);
+        else if (mode === "draw") {
+          selStart = clamp(Math.min(drawAnchor, ms), domainMin, domainMax);
+          selEnd = clamp(Math.max(drawAnchor, ms), domainMin, domainMax);
+        } else if (mode === "band") {
+          const w = selEnd - selStart;
+          const s = clamp(ms - grabOffset, domainMin, domainMax - w);
+          selStart = s; selEnd = s + w;
+        }
+        scheduleRepaint();
+      }
+      function endDrag() {
+        if (!mode) return;
+        if (mode === "draw" && selEnd - selStart < minGap && prevSel) {
+          [selStart, selEnd] = prevSel;
+        }
+        mode = null; sel.classList.remove("drag"); track.classList.remove("scrubbing");
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", endDrag);
+        paintSelection(); refreshReadouts();
+        requestPreview(true); // refit map when the drag settles
+      }
+      function begin(m, e) {
+        mode = m;
+        track.classList.add("scrubbing");
+        if (m === "band") { grabOffset = xToMs(e.clientX) - selStart; sel.classList.add("drag"); }
+        if (m === "draw") { drawAnchor = xToMs(e.clientX); prevSel = [selStart, selEnd]; }
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", endDrag);
+        e.preventDefault(); e.stopPropagation();
+      }
+
+      document.getElementById("hL").addEventListener("pointerdown", e => begin("L", e));
+      document.getElementById("hR").addEventListener("pointerdown", e => begin("R", e));
+      sel.addEventListener("pointerdown", e => begin("band", e));
+      track.addEventListener("pointerdown", e => { if (!e.target.closest("#sel")) begin("draw", e); });
+
+      window.addEventListener("resize", () => { buildAxis(); paintSelection(); });
+    }
+
+    // ---- knob + region controls ------------------------------------------
+    function syncLevel() {
+      document.querySelectorAll("#level-seg button")
+        .forEach(b => b.classList.toggle("on", b.dataset.level === level));
+      document.getElementById("mergekm-row").classList.toggle("disabled", level !== "city");
+      document.getElementById("gran-note").textContent = level === "city" ? "cities" : "countries";
+    }
+
+    function buildRegionChips() {
+      const box = document.getElementById("regions");
+      box.innerHTML = "";
+      if (!allRegions.length) { box.innerHTML = `<span class="none">all</span>`; return; }
+      for (const cc of allRegions) {
+        const b = document.createElement("button");
+        b.className = "chip" + (selectedRegions.has(cc) ? " on" : "");
+        b.textContent = cc;
+        b.title = countryName(cc);
+        b.addEventListener("click", () => {
+          if (selectedRegions.has(cc)) selectedRegions.delete(cc);
+          else selectedRegions.add(cc);
+          b.classList.toggle("on");
+          reloadPoints();
+        });
+        box.appendChild(b);
+      }
+    }
+
+    function setupControls() {
+      document.querySelectorAll("#level-seg button").forEach(btn => {
+        btn.addEventListener("click", () => { level = btn.dataset.level; syncLevel(); requestPreview(false); });
+      });
+      const mk = document.getElementById("merge-km");
+      mk.addEventListener("input", () => {
+        mergeKm = Number(mk.value);
+        document.getElementById("merge-km-val").textContent = mergeKm;
+        requestPreview(false);
+      });
+      const mh = document.getElementById("min-hours");
+      mh.addEventListener("input", () => {
+        minHours = Number(mh.value);
+        document.getElementById("min-hours-val").textContent = minHours;
+        requestPreview(false);
+      });
+      document.getElementById("title").addEventListener("input", updateSaveEnabled);
+      document.getElementById("reset").addEventListener("click", () => {
+        selStart = domainMin; selEnd = domainMax;
+        paintSelection(); refreshReadouts(); requestPreview(true);
+      });
+      document.getElementById("save").addEventListener("click", save);
+    }
+
+    // ---- points load -----------------------------------------------------
+    function decodePoints(data) {
+      const F = data.point_fields || ["t", "lat", "lng", "cc", "city", "photo_id"];
+      const ix = Object.fromEntries(F.map((f, i) => [f, i]));
+      const out = [];
+      for (const row of data.points) {
+        const lat = row[ix.lat], lng = row[ix.lng];
+        if (lat == null || lng == null) continue;
+        const ms = new Date(row[ix.t] + (String(row[ix.t]).length <= 10 ? "T00:00Z" : "Z")).getTime();
+        if (Number.isNaN(ms)) continue;
+        out.push({ ms, cc: row[ix.cc] });
+      }
+      out.sort((a, b) => a.ms - b.ms);
+      return out;
+    }
+
+    async function fetchPoints() {
+      const q = new URLSearchParams();
+      selectedRegions.forEach(cc => q.append("region", cc));
+      const res = await fetch(`/api/points?${q}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    // Re-fetch when the region filter changes: rebuild the histogram/domain from
+    // the filtered set, keep the (fixed) chip list, keep the window if it still
+    // fits, then re-preview.
+    async function reloadPoints() {
+      let data;
+      try { data = await fetchPoints(); } catch (e) { return showError(`Could not load photos: ${e.message}`); }
+      POINTS = decodePoints(data);
+      if (!POINTS.length) {
+        document.getElementById("count-note").textContent = "0 stays";
+        renderList([]); renderMap([], false); updateSaveEnabled();
+        return;
+      }
+      domainMin = POINTS[0].ms;
+      domainMax = POINTS[POINTS.length - 1].ms;
+      selStart = clamp(selStart, domainMin, domainMax);
+      selEnd = clamp(selEnd, domainMin, domainMax);
+      if (selEnd <= selStart) { selStart = domainMin; selEnd = domainMax; }
+      buildHistogram(); buildAxis(); paintSelection(); refreshReadouts();
+      requestPreview(true);
+    }
+
+    // ---- boot ------------------------------------------------------------
+    async function initMap() {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 20, lng: 0 }, zoom: 2, mapTypeControl: false, streetViewControl: false,
+        fullscreenControl: false,
+      });
+      infoWindow = new google.maps.InfoWindow();
+      map.addListener("click", () => { setActive(-1); infoWindow.close(); });
+
+      // apply prefill (from /build/<id>) before the first load
+      if (PREFILL) {
+        if (PREFILL.title) document.getElementById("title").value = PREFILL.title;
+        if (PREFILL.level) level = PREFILL.level;
+        if (PREFILL.merge_km != null) { mergeKm = PREFILL.merge_km; }
+        if (PREFILL.min_hours != null) { minHours = PREFILL.min_hours; }
+        if (Array.isArray(PREFILL.region)) selectedRegions = new Set(PREFILL.region);
+        document.getElementById("merge-km").value = mergeKm;
+        document.getElementById("merge-km-val").textContent = mergeKm;
+        document.getElementById("min-hours").value = minHours;
+        document.getElementById("min-hours-val").textContent = minHours;
+      }
+      syncLevel();
+      setupControls();
+
+      let data;
+      try { data = await fetchPoints(); } catch (e) {
+        return showError(`Could not load photos: ${e.message}`);
+      }
+      POINTS = decodePoints(data);
+      if (!POINTS.length) return showError("No located photos in the catalog yet. Ingest + geocode first.");
+
+      // region chips come from the (unfiltered) first load and stay fixed
+      allRegions = [...new Set(POINTS.map(p => p.cc).filter(Boolean))].sort();
+      buildRegionChips();
+
+      domainMin = POINTS[0].ms;
+      domainMax = POINTS[POINTS.length - 1].ms;
+      selStart = domainMin; selEnd = domainMax;
+      if (PREFILL && PREFILL.start) selStart = clamp(Date.parse(PREFILL.start + "T00:00Z"), domainMin, domainMax);
+      if (PREFILL && PREFILL.end) {
+        // stored end is exclusive (+1 day); pull the handle back onto a real day
+        const e = clamp(Date.parse(PREFILL.end + "T00:00Z") - DAY, domainMin, domainMax);
+        if (e > selStart) selEnd = e;
+      }
+
+      setupStrip(); // wires the scrubber pointer handlers (once)
+      // if prefill filtered by region, reload the histogram against the filtered set
+      if (selectedRegions.size) await reloadPoints();
+      else requestPreview(true);
+    }
+
+    async function save() {
+      const btn = document.getElementById("save");
+      const statusEl = document.getElementById("save-status");
+      const title = document.getElementById("title").value.trim();
+      if (!title || !lastStays.length) return;
+      const id = (PREFILL && PREFILL.id) || slugify(title);
+      btn.disabled = true; statusEl.className = ""; statusEl.textContent = "Saving…";
+      try {
+        const res = await fetch("/api/timeline", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id, title, start: winStart(), end: winEnd(), level,
+            merge_km: mergeKm, min_hours: minHours,
+            region: [...selectedRegions],
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        window.location.href = data.url; // → /t/<id>
+      } catch (e) {
+        statusEl.className = "err"; statusEl.textContent = `Save failed: ${e.message}`;
+        btn.disabled = false;
+      }
+    }
+
+    // Title → filename-safe id (matches the server's ^[a-z0-9][a-z0-9_-]*$).
+    function slugify(s) {
+      const out = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+      return out || "timeline";
+    }
+
+    function showError(msg) {
+      const el = document.getElementById("err");
+      el.textContent = msg; el.style.display = "grid";
+    }
+    window.gm_authFailure = () =>
+      showError("Google Maps rejected the API key (check referrer restrictions / billing).");
+  </script>
+  <script async
+    src="https://maps.googleapis.com/maps/api/js?key={{ api_key }}&callback=initMap&loading=async">
+  </script>
+</body>
+</html>

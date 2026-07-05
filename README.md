@@ -74,8 +74,10 @@ under the map lets you scrub to any window, and the map POIs adapt from **countr
 → city → neighborhood** as you narrow the range (or force a level with the
 Auto / Country / City / Area toggle).
 
-The **`build-timeline` skill** (for coding agents) drives `track-me timeline`
-conversationally and writes the JSON only after you confirm the draft.
+You can also build timelines from the browser: open `http://localhost:5000/build`,
+drag the time-range slider, toggle Country/City, tune the merge/smoothing knobs
+against a live map preview, then **Save**. It calls the same engine as
+`track-me timeline`, so the saved JSON is identical to the CLI for the same knobs.
 
 ## Quality
 
