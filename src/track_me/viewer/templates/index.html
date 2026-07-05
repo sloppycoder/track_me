@@ -17,10 +17,17 @@
     .title { font-weight: 600; }
     .meta { font-size: .8rem; opacity: .6; white-space: nowrap; }
     .empty { opacity: .6; }
+    .head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+    a.new { text-decoration: none; font-size: .9rem; font-weight: 600; color: #4285f4;
+      border: 1px solid #4285f455; border-radius: .5rem; padding: .35rem .7rem; white-space: nowrap; }
+    a.new:hover { background: #4285f411; }
   </style>
 </head>
 <body>
-  <h1>Travel timelines</h1>
+  <div class="head">
+    <h1>Travel timelines</h1>
+    <a class="new" href="/build">+ New timeline</a>
+  </div>
   {% if timelines %}
     <ul>
       {% for t in timelines %}
@@ -33,8 +40,7 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p class="empty">No timelines yet. Ask the agent to build one into
-      <code>userdata/timelines/&lt;id&gt;.json</code>.</p>
+    <p class="empty">No timelines yet. <a href="/build">Build one</a> from your photo catalog.</p>
   {% endif %}
 </body>
 </html>

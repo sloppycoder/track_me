@@ -2,28 +2,43 @@
 
 Serves the static map UI and injects the Google Maps API key (from ``.env``)
 server-side, so the key never lives in the browser file or the repo. Timeline
-data files (``userdata/timelines/<id>.json``) are produced by the
-timeline-building agent and served as-is for the page's JS to fetch.
+data files (``userdata/timelines/<id>.json``) are produced by the web builder
+(``/build``) or the ``track-me timeline`` CLI and served as-is for the page's JS
+to fetch.
 
 Run:
     track-me serve              # then open http://localhost:5000
 
 Routes:
-    GET /                    index of every userdata/timelines/*.json
-    GET /t/<id>              render the map for one timeline
-    GET /timeline/<id>.json  raw timeline data (fetched by the page JS)
+    GET  /                    index of every userdata/timelines/*.json
+    GET  /t/<id>              render the map for one timeline
+    GET  /timeline/<id>.json  raw timeline data (fetched by the page JS)
+    GET  /build               the timeline builder form (+ /build/<id> to edit)
+    GET  /api/points          whole located catalog (columnar) for the builder
+    GET  /api/preview         stays for one set of knobs (live preview)
+    POST /api/timeline        rebuild + persist a timeline, return its /t/<id>
+
+The write route (POST /api/timeline) has no auth; the server binds 127.0.0.1 by
+default (Flask's ``app.run`` default host), so it is not exposed off-box.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 
-from flask import Flask, abort, render_template, send_from_directory
+from flask import Flask, abort, jsonify, render_template, request, send_from_directory
 
 from track_me import config
+from track_me import timeline as tl
+from track_me.db import Database
 
 TIMELINES_DIR = config.TIMELINES_DIR
+
+# Filename-safe timeline ids only (also blocks path traversal on the write path,
+# which — unlike the read routes — has no send_from_directory guard).
+_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 app = Flask(__name__)
 
@@ -83,6 +98,120 @@ def view(timeline_id: str):
 def timeline_data(timeline_id: str):
     # send_from_directory guards against path traversal in <timeline_id>.
     return send_from_directory(TIMELINES_DIR, f"{timeline_id}.json", mimetype="application/json")
+
+
+# --------------------------------------------------------------------------- #
+# Timeline builder                                                            #
+# --------------------------------------------------------------------------- #
+def _load_build_block(timeline_id: str) -> dict | None:
+    """The stored knob values for an existing timeline, if any, so /build/<id>
+    can prefill the form. None if the file is missing/unreadable."""
+    path = TIMELINES_DIR / f"{timeline_id}.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    block = data.get("build")
+    if block:
+        block = {**block, "id": timeline_id, "title": data.get("title", timeline_id)}
+    return block
+
+
+@app.route("/build")
+@app.route("/build/<timeline_id>")
+def build(timeline_id: str | None = None):
+    prefill = _load_build_block(timeline_id) if timeline_id else None
+    return render_template("build.html", api_key=_api_key(), build=prefill)
+
+
+@app.route("/api/points")
+def api_points():
+    """The whole located catalog (region-filtered), as the compact columnar
+    payload the viewer already decodes. The client windows it client-side."""
+    region = request.args.getlist("region") or None
+    db = Database(config.DB_PATH)
+    db.init_schema()
+    rows = db.located_with_place()  # time-ordered
+    if rows:
+        # taken_at is ISO-8601 UTC text; first/last bound the whole span.
+        full_start = rows[0]["taken_at"][:10]
+        full_end = "9999-12-31"
+    else:
+        full_start, full_end = "0000-01-01", "9999-12-31"
+    pts = tl.load_points(full_start, full_end, db=db, region=region)
+    return jsonify(
+        {
+            "point_fields": tl.POINT_FIELDS,
+            "photo_url_prefix": tl._PHOTO_URL_PREFIX,
+            "points": tl.points_payload(pts),
+        }
+    )
+
+
+def _build_stays_from_args(src) -> tuple[list[dict], list[dict], dict]:
+    """Shared load+build for /api/preview and POST /api/timeline. Returns
+    (points, stays, knobs) mirroring cli._cmd_timeline exactly."""
+    start = src.get("start")
+    end = src.get("end")
+    level = src.get("level") or "country"
+    region = src.getlist("region") if hasattr(src, "getlist") else src.get("region")
+    region = region or None
+    merge_km = float(src.get("merge_km", 50.0) or 50.0)
+    min_hours = int(src.get("min_hours", 24) or 24)
+
+    db = Database(config.DB_PATH)
+    db.init_schema()
+    points = tl.load_points(start, end, db=db, region=region)
+    stays = tl.build_stays(
+        start,
+        end,
+        level=level,
+        region=region,
+        merge_km=merge_km,
+        min_hours=min_hours,
+        db=db,
+        points=points,
+    )
+    knobs = {
+        "start": start,
+        "end": end,
+        "level": level,
+        "region": region,
+        "merge_km": merge_km,
+        "min_hours": min_hours,
+    }
+    return points, stays, knobs
+
+
+@app.route("/api/preview")
+def api_preview():
+    _, stays, _ = _build_stays_from_args(request.args)
+    return jsonify({"stays": stays, "stay_count": len(stays)})
+
+
+@app.route("/api/timeline", methods=["POST"])
+def api_timeline():
+    body = request.get_json(silent=True) or {}
+    timeline_id = (body.get("id") or "").strip()
+    title = (body.get("title") or "").strip()
+    if not _ID_RE.match(timeline_id):
+        return jsonify({"ok": False, "error": "invalid id"}), 400
+    if not title:
+        return jsonify({"ok": False, "error": "title required"}), 400
+
+    points, stays, knobs = _build_stays_from_args(body)
+    doc = tl.to_document(
+        stays,
+        timeline_id=timeline_id,
+        title=title,
+        prompts=body.get("prompts") or [],
+        points=points if body.get("embed_points", True) else None,
+        build=knobs,
+    )
+    tl.write_timeline(doc)
+    return jsonify({"ok": True, "id": timeline_id, "url": f"/t/{timeline_id}"})
 
 
 if __name__ == "__main__":

@@ -97,10 +97,13 @@ single Google field is "the city" worldwide. Retune the chain and re-run
 
 ## Building travel timelines
 
-Prefer the **`build-timeline` skill** (`.agents/skills/build-timeline/`) — it
-drives `track-me timeline` conversationally and only writes the JSON after the
-user confirms. `.claude/skills/build-timeline` is a symlink for Claude Code
-compatibility. Logic lives in `src/track_me/timeline.py`. The recipe:
+Two front-ends drive the same deterministic engine (`src/track_me/timeline.py`):
+the **`track-me timeline` CLI** (preview; `--write` to persist — see `README.md`
+for flags) and the **web builder at `/build`** in the viewer (tune the knobs
+visually with a live map preview, then Save). Both call
+`build_stays → to_document → write_timeline`; the browser only renders the
+preview (the server computes the stays, so what you see is what you save). The
+recipe:
 
 1. Pull located photos for the window, ordered by `taken_at` (UTC); bucket dates
    by the photo's **local day** (`local_date`).

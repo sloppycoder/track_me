@@ -212,6 +212,7 @@ def to_document(
     title: str,
     prompts: list[str],
     points: list[dict] | None = None,
+    build: dict | None = None,
 ) -> dict:
     doc = {
         "id": timeline_id,
@@ -220,6 +221,10 @@ def to_document(
         "generated_at": now_utc().replace(microsecond=0).isoformat(),
         "stays": stays,
     }
+    if build is not None:
+        # The knob values the web builder used, so /build/<id> can reload them.
+        # Additive and ignored by the viewer.
+        doc["build"] = build
     if points is not None:
         doc["photo_url_prefix"] = _PHOTO_URL_PREFIX
         doc["point_fields"] = POINT_FIELDS
