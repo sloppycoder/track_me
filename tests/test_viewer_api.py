@@ -99,18 +99,19 @@ def test_preview_city_level_knobs(client):
     assert [s["label"] for s in got] == ["Paris", "Tokyo"]
 
 
-def test_points_payload_and_region_filter(client):
-    resp = client.get("/api/points")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["point_fields"] == tl.POINT_FIELDS
-    assert len(data["points"]) == 5  # all located photos
+def test_range_bounds_and_countries(client):
+    """/api/range gives the catalog date span + distinct country codes that the
+    builder form uses for its date-picker bounds and region chips."""
+    data = client.get("/api/range").get_json()
+    assert data["min"] == "2019-06-01"  # first seeded photo
+    assert data["max"] == "2019-06-07"  # last seeded photo
+    assert data["countries"] == ["FR", "JP"]
 
-    ccs = {row[data["point_fields"].index("cc")] for row in data["points"]}
-    assert ccs == {"FR", "JP"}
 
-    filtered = client.get("/api/points", query_string={"region": "JP"}).get_json()
-    assert len(filtered["points"]) == 2
+def test_preview_requires_window(client):
+    """Missing start/end is a clean 400, not a 500."""
+    assert client.get("/api/preview").status_code == 400
+    assert client.get("/api/preview", query_string={"start": "2019-01-01"}).status_code == 400
 
 
 def test_save_roundtrips_through_viewer(client):

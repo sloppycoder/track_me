@@ -14,7 +14,7 @@ Routes:
     GET  /t/<id>              render the map for one timeline
     GET  /timeline/<id>.json  raw timeline data (fetched by the page JS)
     GET  /build               the timeline builder form (+ /build/<id> to edit)
-    GET  /api/points          whole located catalog (columnar) for the builder
+    GET  /api/range           catalog date span + country codes for the form
     GET  /api/preview         stays for one set of knobs (live preview)
     POST /api/timeline        rebuild + persist a timeline, return its /t/<id>
 
@@ -122,30 +122,27 @@ def _load_build_block(timeline_id: str) -> dict | None:
 @app.route("/build")
 @app.route("/build/<timeline_id>")
 def build(timeline_id: str | None = None):
+    # The builder is a plain form + a server-computed stats summary — no map —
+    # so it needs no Google Maps key (the interactive map lives on /t/<id>).
     prefill = _load_build_block(timeline_id) if timeline_id else None
-    return render_template("build.html", api_key=_api_key(), build=prefill)
+    return render_template("build.html", build=prefill)
 
 
-@app.route("/api/points")
-def api_points():
-    """The whole located catalog (region-filtered), as the compact columnar
-    payload the viewer already decodes. The client windows it client-side."""
-    region = request.args.getlist("region") or None
+@app.route("/api/range")
+def api_range():
+    """Catalog date span + distinct country codes — feeds the builder form's
+    date-picker bounds and region chips (no heavy points payload)."""
     db = Database(config.DB_PATH)
     db.init_schema()
-    rows = db.located_with_place()  # time-ordered
-    if rows:
-        # taken_at is ISO-8601 UTC text; first/last bound the whole span.
-        full_start = rows[0]["taken_at"][:10]
-        full_end = "9999-12-31"
-    else:
-        full_start, full_end = "0000-01-01", "9999-12-31"
-    pts = tl.load_points(full_start, full_end, db=db, region=region)
+    rows = db.located_with_place()  # time-ordered by taken_at
+    if not rows:
+        return jsonify({"min": None, "max": None, "countries": []})
+    countries = sorted({r["country_code"] for r in rows if r["country_code"]})
     return jsonify(
         {
-            "point_fields": tl.POINT_FIELDS,
-            "photo_url_prefix": tl._PHOTO_URL_PREFIX,
-            "points": tl.points_payload(pts),
+            "min": rows[0]["taken_at"][:10],
+            "max": rows[-1]["taken_at"][:10],
+            "countries": countries,
         }
     )
 
@@ -187,6 +184,8 @@ def _build_stays_from_args(src) -> tuple[list[dict], list[dict], dict]:
 
 @app.route("/api/preview")
 def api_preview():
+    if not request.args.get("start") or not request.args.get("end"):
+        return jsonify({"error": "start and end required"}), 400
     _, stays, _ = _build_stays_from_args(request.args)
     return jsonify({"stays": stays, "stay_count": len(stays)})
 
@@ -200,6 +199,8 @@ def api_timeline():
         return jsonify({"ok": False, "error": "invalid id"}), 400
     if not title:
         return jsonify({"ok": False, "error": "title required"}), 400
+    if not body.get("start") or not body.get("end"):
+        return jsonify({"ok": False, "error": "start and end required"}), 400
 
     points, stays, knobs = _build_stays_from_args(body)
     doc = tl.to_document(
