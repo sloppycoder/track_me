@@ -147,6 +147,12 @@ geocoding is mocked (`tests/test_geocode.py`). Real-world sidecar fixtures live 
 
 ## Git Commit Guidelines
 
+**Single-developer repo — work directly on `main`.** There is no feature-branch
+workflow, no pull-request review requirement, and no branch protection to honor.
+Commit changes straight to `main`. Don't create feature branches or open PRs just
+to land a change (a branch is only warranted for genuinely experimental work the
+developer asks to keep separate).
+
 Always include a summary in the commit message:
 
 ```bash
