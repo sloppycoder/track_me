@@ -90,6 +90,79 @@ pytest
 ty check .
 ```
 
+## Deploy (Cloud Run)
+
+The viewer ships to **Cloud Run** (region `us-west1`) from GitHub Actions: every
+push lints + tests, and a push to `main` builds the container and deploys it. The
+concrete project / bucket / service-account values live only in the workflow's
+`env:` block; the docs use placeholders. Runtime data (the SQLite DB + timelines)
+is **not** in the image — a GCS bucket is mounted at `/mnt/gcs` and the app reads
+it via `TRACKME_USERDATA=/mnt/gcs/track_me`. Auth is keyless via **Workload
+Identity Federation** (no service-account keys in GitHub).
+
+**`DEPLOY.md`** has the full runbook (what's already provisioned, the remaining
+one-time steps, and how to run the image locally). The identity setup below is
+reproduced here so you can (re)create it by hand.
+
+### One-time identity setup (service account + federation)
+
+A single dedicated service account is both the GitHub **deployer** (impersonated
+via WIF) and the Cloud Run **runtime** identity. Run once per project:
+
+```shell
+PROJECT_ID=your-gcp-project                     # e.g. the GCP project id
+PROJECT_NUM=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+REPO=your-org/your-repo                         # owner/repo allowed to deploy
+BUCKET=your-data-bucket                         # GCS bucket for the DB + timelines
+SA=track-me@${PROJECT_ID}.iam.gserviceaccount.com
+
+# APIs + the image registry
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
+  iamcredentials.googleapis.com sts.googleapis.com \
+  secretmanager.googleapis.com storage.googleapis.com --project="$PROJECT_ID"
+gcloud artifacts repositories create track-me --project="$PROJECT_ID" \
+  --repository-format=docker --location=us-west1
+
+# The service account
+gcloud iam service-accounts create track-me --project="$PROJECT_ID" \
+  --display-name="track_me viewer (Cloud Run + GitHub deploy)"
+
+# Workload Identity Federation, locked to one GitHub repo
+gcloud iam workload-identity-pools create github-pool \
+  --project="$PROJECT_ID" --location=global --display-name="GitHub Actions pool"
+gcloud iam workload-identity-pools providers create-oidc github-provider \
+  --project="$PROJECT_ID" --location=global --workload-identity-pool=github-pool \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository=='${REPO}'"
+
+# Roles: (1) let the repo impersonate the SA, (2) let the SA run-as itself,
+# (3) deploy rights, (4) read/write the mounted bucket.
+PRINCIPAL="principalSet://iam.googleapis.com/projects/${PROJECT_NUM}/locations/global/workloadIdentityPools/github-pool/attribute.repository/${REPO}"
+gcloud iam service-accounts add-iam-policy-binding "$SA" \
+  --role=roles/iam.workloadIdentityUser --member="$PRINCIPAL"
+gcloud iam service-accounts add-iam-policy-binding "$SA" \
+  --role=roles/iam.serviceAccountUser --member="serviceAccount:${SA}"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${SA}" --role=roles/run.admin --condition=None
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${SA}" --role=roles/artifactregistry.writer --condition=None
+gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
+  --member="serviceAccount:${SA}" --role=roles/storage.objectUser
+```
+
+Then set two repo secrets (**Settings → Secrets and variables → Actions**):
+
+| Secret | Value |
+| --- | --- |
+| `GCP_WIF_PROVIDER` | `projects/<PROJECT_NUM>/locations/global/workloadIdentityPools/github-pool/providers/github-provider` |
+| `GCP_SERVICE_ACCOUNT` | `track-me@<PROJECT_ID>.iam.gserviceaccount.com` |
+
+Neither value is a credential — the WIF provider only mints tokens for the exact
+`REPO` above, so they're safe even in a public repo. The Maps-key secret and
+seeding the bucket are covered in **`DEPLOY.md`**.
+
 ## More
 
+- **`DEPLOY.md`** — Cloud Run deployment runbook.
 - **`CLAUDE.md`** — working agreement for coding agents (structure, commands).

@@ -1,5 +1,6 @@
-# Trunk-based: runs on PRs and pushes to main. Lints and runs the test suite.
-# (The tool is local-first / SQLite-only; there is no container image to build.)
+# Trunk-based: runs on PRs and pushes to main. Lints + tests every change, then
+# (only on a push to main, or a manual run) builds the viewer container and
+# deploys it to Cloud Run. See DEPLOY.md for the one-time GCP/WIF setup.
 on:
   push:
     branches:
@@ -9,8 +10,17 @@ on:
       - main
   workflow_dispatch:
 
+# id-token: needed for keyless auth to GCP via Workload Identity Federation.
 permissions:
   contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT: vino9-276317
+  GCP_REGION: us-west1 # "oregon"
+  SERVICE_NAME: track-me
+  AR_REPO: track-me # Artifact Registry repo (Docker format) in GCP_REGION
+  GCS_BUCKET: vinolab # mounted at runtime; TRACKME_USERDATA points inside it
 
 jobs:
   pytest:
@@ -38,3 +48,67 @@ jobs:
 
       - name: Unit tests
         run: uv run pytest -q
+
+  deploy:
+    needs: pytest
+    # Only ship from main (or a manual dispatch); PRs stop after pytest.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Image metadata
+        id: meta
+        run: |
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPO}/${SERVICE_NAME}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tag=${IMAGE}:${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          provenance: false
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "${SERVICE_NAME}" \
+            --project="${GCP_PROJECT}" \
+            --region="${GCP_REGION}" \
+            --image="${{ steps.meta.outputs.tag }}" \
+            --platform=managed \
+            --execution-environment=gen2 \
+            --port=8080 \
+            --cpu=1 \
+            --memory=512Mi \
+            --max-instances=1 \
+            --timeout=60s \
+            --allow-unauthenticated \
+            --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
+            --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
+            --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
+            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me" \
+            --set-secrets="GOOGLE_MAPS_API_KEY=track-me-maps-key:latest"

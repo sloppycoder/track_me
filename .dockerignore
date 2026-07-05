@@ -1,0 +1,15 @@
+# Ignore everything, then whitelist only what the image needs. This keeps the
+# build context small and, crucially, keeps local state (userdata/, .env, the
+# SQLite DB) out of the image — at runtime that data is mounted from GCS.
+**
+
+# --- application ---
+!src/
+!pyproject.toml
+!uv.lock
+!README.md
+
+# --- re-exclude junk that the src/ whitelist would otherwise pull back in ---
+**/__pycache__/
+**/*.pyc
+.git/
