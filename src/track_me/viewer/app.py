@@ -33,6 +33,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_from_dir
 from track_me import config
 from track_me import timeline as tl
 from track_me.db import Database
+from track_me.viewer.auth import init_auth
 
 TIMELINES_DIR = config.TIMELINES_DIR
 
@@ -41,6 +42,9 @@ TIMELINES_DIR = config.TIMELINES_DIR
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 app = Flask(__name__)
+# Gate every request behind Cloudflare Access when CF_ACCESS_* is configured;
+# fail-open (allow) when it isn't, so local dev and unconfigured deploys work.
+init_auth(app)
 
 
 @app.after_request

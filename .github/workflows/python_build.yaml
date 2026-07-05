@@ -110,5 +110,8 @@ jobs:
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
             --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
             --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
-            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me" \
+            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,CF_ACCESS_TEAM_DOMAIN=vino9,CF_ACCESS_AUD=ignore" \
             --set-secrets="GOOGLE_MAPS_API_KEY=track-me-maps-key:latest"
+            # Cloudflare Access is OFF while CF_ACCESS_AUD=ignore. To enable it,
+            # replace "ignore" with the track_me Access app's AUD tag — no other
+            # change needed (CF_ACCESS_TEAM_DOMAIN is already the team name).
