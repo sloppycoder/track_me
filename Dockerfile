@@ -13,7 +13,10 @@ ENV UV_PROJECT_ENVIRONMENT=/app/venv \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-WORKDIR /src
+# Build (and later run) from a single fixed path. uv installs the project as an
+# editable install pointing at /app/src, so the source must live at this same
+# path in the runtime stage — hence /app here and /app there.
+WORKDIR /app
 
 # Resolve deps first (cached until the lockfile changes), then install the project.
 COPY pyproject.toml uv.lock ./
@@ -33,9 +36,9 @@ FROM python:3.12-slim-bookworm
 RUN addgroup --system app && adduser --system --group app
 WORKDIR /app
 
-# venv + application code from the builder
-COPY --chown=app:app --from=builder /app/venv /app/venv
-COPY --chown=app:app --from=builder /src /app
+# venv + source together, at the SAME /app path they were built at, so the
+# editable install resolves and package data (templates, schema.sql) is present.
+COPY --chown=app:app --from=builder /app /app
 
 ENV PATH="/app/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
