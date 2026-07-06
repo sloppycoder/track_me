@@ -106,7 +106,7 @@
   <div id="stage">
     <div id="map"></div>
     <div id="sidebar">
-      <h1><a class="back" href="/" title="All timelines">&larr;</a>
+      <h1><a class="back" href="{{ request.script_root }}/" title="All timelines">&larr;</a>
         <span class="ttl" id="ptitle">Timeline</span></h1>
       <div id="subhead">
         <span class="sub-left">
@@ -152,6 +152,8 @@
 
   <script>
     const TIMELINE_ID = {{ timeline_id | tojson }};
+    // Context-path prefix (e.g. "/trackme" behind the Cloudflare Worker; "" locally).
+    const BASE = {{ request.script_root | tojson }};
     const DAY = 86400000;
     const MAX_MARKERS = 250;
 
@@ -631,7 +633,7 @@
       let data;
       try {
         // cache-bust our own data so a rebuilt timeline always reloads fresh
-        const res = await fetch(`/timeline/${TIMELINE_ID}.json?v=${Date.now()}`, { cache: "no-store" });
+        const res = await fetch(`${BASE}/timeline/${TIMELINE_ID}.json?v=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         data = await res.json();
       } catch (e) {

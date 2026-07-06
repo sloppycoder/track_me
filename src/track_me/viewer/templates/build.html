@@ -91,7 +91,7 @@
 </head>
 <body>
   <header>
-    <a class="back" href="/" title="All timelines">&larr;</a>
+    <a class="back" href="{{ request.script_root }}/" title="All timelines">&larr;</a>
     <h1>Build a timeline</h1>
   </header>
 
@@ -166,6 +166,8 @@
 
   <script>
     const PREFILL = {{ build | tojson }};
+    // Context-path prefix (e.g. "/trackme" behind the Cloudflare Worker; "" locally).
+    const BASE = {{ request.script_root | tojson }};
     const DAY = 86400000;
 
     let level = "country", mergeKm = 50, minHours = 24;
@@ -253,7 +255,7 @@
       selectedRegions.forEach(cc => q.append("region", cc));
       let data;
       try {
-        const res = await fetch(`/api/preview?${q}`, { cache: "no-store" });
+        const res = await fetch(`${BASE}/api/preview?${q}`, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         data = await res.json();
       } catch (e) {
@@ -332,7 +334,7 @@
 
       let range;
       try {
-        const res = await fetch("/api/range", { cache: "no-store" });
+        const res = await fetch(`${BASE}/api/range`, { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         range = await res.json();
       } catch (e) {
@@ -365,7 +367,7 @@
       const id = (PREFILL && PREFILL.id) || slugify(title);
       btn.disabled = true; statusEl.className = ""; statusEl.textContent = "Saving…";
       try {
-        const res = await fetch("/api/timeline", {
+        const res = await fetch(`${BASE}/api/timeline`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -375,7 +377,7 @@
         });
         const data = await res.json();
         if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        window.location.href = data.url; // → /t/<id>
+        window.location.href = BASE + data.url; // → /t/<id>
       } catch (e) {
         statusEl.className = "err"; statusEl.textContent = `Save failed: ${e.message}`;
         btn.disabled = false;

@@ -26,13 +26,13 @@
 <body>
   <div class="head">
     <h1>Travel timelines</h1>
-    <a class="new" href="/build">+ New timeline</a>
+    <a class="new" href="{{ request.script_root }}/build">+ New timeline</a>
   </div>
   {% if timelines %}
     <ul>
       {% for t in timelines %}
         <li>
-          <a class="card" href="/t/{{ t.id }}">
+          <a class="card" href="{{ request.script_root }}/t/{{ t.id }}">
             <span class="title">{{ t.title }}</span>
             <span class="meta">{{ t.stay_count }} stays{% if t.generated_at %} &middot; {{ t.generated_at[:10] }}{% endif %}</span>
           </a>
@@ -40,7 +40,7 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p class="empty">No timelines yet. <a href="/build">Build one</a> from your photo catalog.</p>
+    <p class="empty">No timelines yet. <a href="{{ request.script_root }}/build">Build one</a> from your photo catalog.</p>
   {% endif %}
 </body>
 </html>

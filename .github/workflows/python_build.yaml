@@ -110,8 +110,10 @@ jobs:
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
             --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
             --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
-            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,CF_ACCESS_TEAM_DOMAIN=vino9,CF_ACCESS_AUD=ignore" \
+            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,CF_ACCESS_TEAM_DOMAIN=vino9,CF_ACCESS_AUD=466504f0fa8c50e3967b776331a7cc96d2c52f9d789a5df4a31f225ad5967dfe" \
             --set-secrets="GOOGLE_MAPS_API_KEY=track-me-maps-key:latest"
-            # Cloudflare Access is OFF while CF_ACCESS_AUD=ignore. To enable it,
-            # replace "ignore" with the track_me Access app's AUD tag — no other
-            # change needed (CF_ACCESS_TEAM_DOMAIN is already the team name).
+            # Cloudflare Access is ON: CF_ACCESS_AUD is the "lee" Access app's AUD
+            # tag (whole-host lee.vino9.net/*). auth.py enforces the JWT, so a
+            # request without a valid Access token gets 403 — this also closes the
+            # direct *.run.app bypass. The AUD is the public `aud` claim (not a
+            # secret); set it back to "ignore" to disable Access without a redeploy.

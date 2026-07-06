@@ -29,6 +29,7 @@ import os
 import re
 
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from track_me import config
 from track_me import timeline as tl
@@ -42,6 +43,12 @@ TIMELINES_DIR = config.TIMELINES_DIR
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 app = Flask(__name__)
+# Honor X-Forwarded-Prefix (and -Proto) so the app can be mounted under a context
+# path — e.g. a Cloudflare Worker fronting lee.vino9.net/trackme/ strips "/trackme"
+# and sets X-Forwarded-Prefix: /trackme. ProxyFix moves that into SCRIPT_NAME, which
+# surfaces as request.script_root in the templates (empty locally, so `track-me
+# serve` over http://localhost is unaffected). See cf/README.md.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_prefix=1)  # ty: ignore[invalid-assignment]
 # Gate every request behind Cloudflare Access when CF_ACCESS_* is configured;
 # fail-open (allow) when it isn't, so local dev and unconfigured deploys work.
 init_auth(app)

@@ -1,0 +1,11 @@
+# Deploy the path router with:  wrangler deploy  (from this cf/ directory)
+# Docs: https://developers.cloudflare.com/workers/wrangler/
+name = "lee-router"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+# Bind the Worker to the whole hostname; it 404s any path not in ROUTES.
+# The zone must be the one hosting lee.vino9.net.
+routes = [
+  { pattern = "lee.vino9.net/*", zone_name = "vino9.net" },
+]
