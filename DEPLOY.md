@@ -92,6 +92,15 @@ Neither value is a credential — the WIF provider only mints tokens for the exa
 `<OWNER>/<REPO>` it was locked to — but keeping them as secrets keeps the concrete
 ids out of Actions logs.
 
+### 4. (Optional) Front with Cloudflare Access
+
+Cloud Run runs `--allow-unauthenticated`; the app itself is gated by Cloudflare
+**Zero Trust Access** at `lee.vino9.net/trackme/`, routed by a Cloudflare Worker.
+The deploy step sets `CF_ACCESS_TEAM_DOMAIN` + `CF_ACCESS_AUD` so `viewer/auth.py`
+validates the Access JWT (and closes the direct `*.run.app` bypass); `CF_ACCESS_AUD=ignore`
+turns it off. Full edge setup (Worker, DNS, the Access app, subpath-awareness) is
+documented in **[`cf/README.md`](cf/README.md)**.
+
 ---
 
 ## Deploy

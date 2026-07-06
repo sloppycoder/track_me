@@ -100,6 +100,11 @@ is **not** in the image — a GCS bucket is mounted at `/mnt/gcs` and the app re
 it via `TRACKME_USERDATA=/mnt/gcs/track_me`. Auth is keyless via **Workload
 Identity Federation** (no service-account keys in GitHub).
 
+Public access is gated by **Cloudflare Zero Trust Access** at
+`lee.vino9.net/trackme/` — a single Cloudflare Worker path-routes the hostname to
+the Cloud Run backend and the viewer validates the Access JWT. See
+**[`cf/README.md`](cf/README.md)**.
+
 **`DEPLOY.md`** has the full runbook (what's already provisioned, the remaining
 one-time steps, and how to run the image locally). The identity setup below is
 reproduced here so you can (re)create it by hand.
@@ -165,4 +170,5 @@ seeding the bucket are covered in **`DEPLOY.md`**.
 ## More
 
 - **`DEPLOY.md`** — Cloud Run deployment runbook.
+- **`cf/README.md`** — Cloudflare edge: path routing (Worker) + Zero Trust Access.
 - **`CLAUDE.md`** — working agreement for coding agents (structure, commands).
