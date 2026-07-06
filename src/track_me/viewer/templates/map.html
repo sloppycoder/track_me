@@ -218,7 +218,14 @@
         if (p.city) cityCount.set(p.city, (cityCount.get(p.city) || 0) + 1);
       }
       const n = pts.length, cc = pts[0].cc, city = topKey(cityCount);
-      const label = g === "country" ? countryName(cc) : (city || countryName(cc));
+      const cname = countryName(cc);
+      // Country level: a stay with a single city reads better as "City, Country"
+      // than the bare country (you'd otherwise have to drill in to learn the one
+      // city). Drop to just the country when the city *is* the country (e.g.
+      // Singapore) or when there are several cities.
+      const label = g === "country"
+        ? (cityCount.size === 1 && city && city !== cname ? `${city}, ${cname}` : cname)
+        : (city || cname);
       return { label, cc, city, lat: lat / n, lng: lng / n, count: n, from, to, url };
     }
 
@@ -320,13 +327,11 @@
       const c = lastClusters[i];
       if (!c) return;
       const cur = effGran();
-      const next = GRAN_ORDER[Math.min(GRAN_ORDER.indexOf(cur) + 1, GRAN_ORDER.length - 1)];
+      let next = GRAN_ORDER[Math.min(GRAN_ORDER.indexOf(cur) + 1, GRAN_ORDER.length - 1)];
       if (next === cur) { focusCluster(i, true); return; }
       // remember where we came from so ← Back can restore level + window
       drillStack.push({ gran, selStart, selEnd,
         backLabel: { country: "countries", city: "cities", area: "areas" }[cur] });
-      gran = next;
-      syncGranButtons();
       // Narrow to exactly this place's span. Clusters are built from contiguous
       // time-ordered runs, so [c.from, c.to] contains only this place's own
       // photos — drilling stays hierarchical (into Singapore shows Singapore's
@@ -336,6 +341,16 @@
       const pad = c.to > c.from ? 0 : 30 * 60 * 1000; // 30 min around a single photo
       selStart = clamp(c.from - pad, domainMin, domainMax);
       selEnd = clamp(c.to + pad, domainMin, domainMax);
+      // Skip past any finer level that wouldn't actually split this place into
+      // more than one marker — a single-item level is a dead click (you'd just
+      // see the same place relabelled, e.g. a country whose only city is the one
+      // you clicked). Advance until the level yields >1 marker or we hit `area`.
+      const win = pointsInWindow();
+      while (next !== "area" && cluster(win, next).length <= 1) {
+        next = GRAN_ORDER[GRAN_ORDER.indexOf(next) + 1];
+      }
+      gran = next;
+      syncGranButtons();
       render(true); paintSelection(); syncDrillBack();
     }
 

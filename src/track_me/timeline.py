@@ -3,8 +3,9 @@
 Reads the media/place schema via db.py and applies the recipe documented in
 CLAUDE.md: pull located photos in time order -> segment on label change -> smooth
 sub-day blips -> centroid per run. Country labels come from ``place.country_code``;
-city labels from the stored ``place.city`` (Google-derived at geocode time), so no
-query-time reverse-geocoding is needed.
+city-tier labels come from :func:`city_label` — the fine ``place.city``, except a
+few metros (Tokyo, Hanoi) collapse their wards/districts onto ``place.admin1``. All
+Google-derived at geocode time, so no query-time reverse-geocoding is needed.
 
 The output document matches the viewer/skill schema (stays + prompts + metadata).
 """
@@ -53,6 +54,7 @@ def load_points(
                 "lng": r["longitude"],
                 "cc": r["country_code"],
                 "city": r["city"],
+                "admin1": r["admin1"],
                 "url": r["google_photos_url"],
             }
         )
@@ -95,6 +97,33 @@ def _smooth(runs: list[dict], min_hours: int = 24) -> list[dict]:
     return merged
 
 
+# admin1 values that ARE effectively the city, so their sub-localities collapse
+# onto them instead of fragmenting the map. Google returns each of Tokyo's 23
+# special wards (Chiyoda/Chuo/Taito City …) and each of Hanoi's districts as its
+# own `locality`, yet they share one admin1 ("Tokyo" / "Hà Nội"). Keyed by
+# (country_code, admin1); extend as you hit more KL/HCMC-style metros.
+METRO_AS_CITY = {
+    ("JP", "Tokyo"),
+    ("VN", "Hà Nội"),
+}
+
+
+def city_label(p: dict) -> str | None:
+    """The city-tier label for a point.
+
+    Default to the fine ``place.city`` (Nagoya, Osaka, Sapporo …). ``admin1`` is a
+    prefecture/region and is too coarse for most places — it would show "Aichi"
+    for Nagoya (in this catalog admin1 != city ~6× as often as it matches). Only
+    the handful of metros in :data:`METRO_AS_CITY`, whose real "city" is itself an
+    admin1 unit and whose wards/districts would otherwise fragment, collapse to
+    ``admin1``. Fall back to ``admin1`` only when the fine city is missing.
+    """
+    admin1 = (p.get("admin1") or "").strip()
+    if (p.get("cc"), admin1) in METRO_AS_CITY:
+        return admin1
+    return p.get("city") or admin1 or None
+
+
 def _stay_from_run(pts: list[dict], label: str) -> dict:
     lat = sum(p["lat"] for p in pts) / len(pts)
     lng = sum(p["lng"] for p in pts) / len(pts)
@@ -133,9 +162,9 @@ def _haversine_km(a_lat, a_lng, b_lat, b_lng) -> float:
 
 def city_stays(points: list[dict], *, merge_km: float = 50.0, min_hours: int = 24) -> list[dict]:
     """Cluster consecutive photos within merge_km of a running centroid into one
-    stay, labelled by the most common stored place.city in the cluster, then
-    smooth sub-day blips."""
-    labelled = [p for p in points if p["city"]]
+    stay, labelled by the most common city_label (admin1, city fallback) in the
+    cluster, then smooth sub-day blips."""
+    labelled = [p for p in points if city_label(p)]
     if not labelled:
         return []
 
@@ -152,7 +181,7 @@ def city_stays(points: list[dict], *, merge_km: float = 50.0, min_hours: int = 2
             cen_lat, cen_lng, n = p["lat"], p["lng"], 1
 
     for c in clusters:
-        label = Counter(q["city"] for q in c).most_common(1)[0][0]
+        label = Counter(city_label(q) for q in c).most_common(1)[0][0]
         for p in c:
             p["_label"] = label
     runs = _smooth(
@@ -166,6 +195,10 @@ def city_stays(points: list[dict], *, merge_km: float = 50.0, min_hours: int = 2
 # --------------------------------------------------------------------------- #
 # Compact, self-describing columnar rows so the viewer can filter by time and
 # re-cluster at any granularity (country / city / neighborhood) client-side.
+# NOTE: the "city" column carries city_label() — the fine place.city, except a
+# few metros collapse to admin1 (see METRO_AS_CITY) — so the viewer's city-level
+# clustering shows real cities (Nagoya, Osaka) while Tokyo/Hanoi wards don't
+# fragment. Field name kept as "city"; the viewer reads it by name, no change.
 POINT_FIELDS = ["t", "lat", "lng", "cc", "city", "photo_id"]
 _PHOTO_URL_PREFIX = "https://photos.google.com/photo/"
 
@@ -195,7 +228,7 @@ def points_payload(points: list[dict]) -> list[list]:
                 round(p["lat"], 5),
                 round(p["lng"], 5),
                 p["cc"],
-                p["city"],
+                city_label(p),
                 _photo_id(p["url"]),
             ]
         )

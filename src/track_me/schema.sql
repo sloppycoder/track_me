@@ -10,8 +10,12 @@ CREATE TABLE IF NOT EXISTS place (
     h3_cell           TEXT PRIMARY KEY,   -- cell at the active geocode resolution
     center_lat        REAL,
     center_lng        REAL,
-    city              TEXT,               -- derived offline from geocode_raw
-    admin1            TEXT,               -- state / province / region
+    city              TEXT,               -- fine locality (Google locality-tier),
+                                          --   derived offline from geocode_raw;
+                                          --   the PRIMARY city-tier label
+    admin1            TEXT,               -- state / province / prefecture; used as
+                                          --   the city label only for metro
+                                          --   exceptions (timeline.METRO_AS_CITY)
     country_code      TEXT,               -- ISO-2
     formatted_address TEXT,               -- Google's full formatted address
     geocode_raw       TEXT,               -- JSON: Google address_components
