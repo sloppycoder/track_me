@@ -28,6 +28,12 @@ USERDATA_DIR = Path(
 ).resolve()
 
 DB_PATH = Path(os.getenv("DB_PATH", str(USERDATA_DIR / "track_me.db")))
+# The viewer opens the DB read-only (it never writes). Set DB_IMMUTABLE=1 to also
+# open it immutable — SQLite then skips locking + WAL/SHM sidecars, a win when the
+# DB lives on a network filesystem (e.g. gcsfuse on Cloud Run). Only safe if nothing
+# rewrites the file while the app runs, so keep it OFF for local dev where an
+# ingest/geocode may run alongside `track-me serve`.
+DB_IMMUTABLE = os.getenv("DB_IMMUTABLE") == "1"
 # Preserved copy of the old Django DB, kept for the old-vs-new comparison.
 LEGACY_DB_PATH = Path(os.getenv("LEGACY_DB_PATH", str(USERDATA_DIR / "track_me_legacy.db")))
 

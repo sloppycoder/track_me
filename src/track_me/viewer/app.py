@@ -73,6 +73,14 @@ def _api_key() -> str:
     return key
 
 
+def _db() -> Database:
+    """Open the catalog read-only — the viewer only reads it (no ingest/geocode
+    here), so it never needs the write path or schema init. DB_IMMUTABLE=1 also
+    skips SQLite locking/WAL for network filesystems (e.g. gcsfuse). The DB must
+    already exist; bootstrap it with any RW command (`track-me ingest`) first."""
+    return Database.read_only(config.DB_PATH, immutable=config.DB_IMMUTABLE)
+
+
 def _list_timelines() -> list[dict]:
     """Return light metadata for every timeline file, newest first."""
     out: list[dict] = []
@@ -143,8 +151,7 @@ def build(timeline_id: str | None = None):
 def api_range():
     """Catalog date span + distinct country codes — feeds the builder form's
     date-picker bounds and region chips (no heavy points payload)."""
-    db = Database(config.DB_PATH)
-    db.init_schema()
+    db = _db()
     rows = db.located_with_place()  # time-ordered by taken_at
     if not rows:
         return jsonify({"min": None, "max": None, "countries": []})
@@ -169,8 +176,7 @@ def _build_stays_from_args(src) -> tuple[list[dict], list[dict], dict]:
     merge_km = float(src.get("merge_km", 50.0) or 50.0)
     min_hours = int(src.get("min_hours", 24) or 24)
 
-    db = Database(config.DB_PATH)
-    db.init_schema()
+    db = _db()
     points = tl.load_points(start, end, db=db, region=region)
     stays = tl.build_stays(
         start,

@@ -302,6 +302,24 @@ class Database:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
 
+    @classmethod
+    def read_only(cls, path: str | Path, *, immutable: bool = False) -> Database:
+        """Open an existing DB read-only — no ``mkdir``, no ``init_schema``, no
+        writes (any write raises ``sqlite3.OperationalError``).
+
+        The file must already exist (``mode=ro`` will not create it). Pass
+        ``immutable=True`` to also promise SQLite the file won't change while
+        open: it then skips all locking and the ``-wal``/``-shm`` sidecars, a
+        real win on network filesystems (e.g. gcsfuse) — but only safe if
+        nothing mutates the file for the life of the connection.
+        """
+        self = cls.__new__(cls)
+        self.path = Path(path)
+        flags = "mode=ro&immutable=1" if immutable else "mode=ro"
+        self.conn = sqlite3.connect(f"file:{self.path}?{flags}", uri=True)
+        self.conn.row_factory = sqlite3.Row
+        return self
+
     def close(self) -> None:
         self.conn.close()
 

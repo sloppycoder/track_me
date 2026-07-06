@@ -110,8 +110,14 @@ jobs:
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
             --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
             --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
-            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,CF_ACCESS_TEAM_DOMAIN=vino9,CF_ACCESS_AUD=466504f0fa8c50e3967b776331a7cc96d2c52f9d789a5df4a31f225ad5967dfe" \
+            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,DB_IMMUTABLE=1,CF_ACCESS_TEAM_DOMAIN=vino9,CF_ACCESS_AUD=466504f0fa8c50e3967b776331a7cc96d2c52f9d789a5df4a31f225ad5967dfe" \
             --set-secrets="GOOGLE_MAPS_API_KEY=track-me-maps-key:latest"
+            # DB_IMMUTABLE=1: the viewer opens the SQLite catalog read-only +
+            # immutable, so SQLite skips locking/WAL over the gcsfuse mount. Safe
+            # because ingest/geocode never run in this container — the DB is only
+            # rewritten out-of-band (upload a fresh object; instances restart to
+            # pick it up). Drop this env var if the mounted DB is ever written live.
+            #
             # Cloudflare Access is ON: CF_ACCESS_AUD is the "lee" Access app's AUD
             # tag (whole-host lee.vino9.net/*). auth.py enforces the JWT, so a
             # request without a valid Access token gets 403 — this also closes the
