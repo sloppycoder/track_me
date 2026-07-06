@@ -183,20 +183,6 @@
       return da === db ? da : `${da} – ${db}`;
     }
 
-    // Deep link into Google Photos showing everything shot in [from, to] — the
-    // undocumented but working `#date_range:YYYYMMDD-YYYYMMDD` search operator.
-    // Works at every granularity: a country stay opens the whole trip, a city
-    // stay that city's days. (Date-scoped, not place-scoped — Google Photos has
-    // no public URL to filter by location too.)
-    function gphotosRangeUrl(fromMs, toMs) {
-      const ymd = ms => {
-        const x = new Date(ms), p = n => String(n).padStart(2, "0");
-        return `${x.getFullYear()}${p(x.getMonth() + 1)}${p(x.getDate())}`;
-      };
-      return "https://photos.google.com/search/"
-        + encodeURIComponent(`#date_range:${ymd(fromMs)}-${ymd(toMs)}`);
-    }
-
     function autoGran(days) {
       if (days > 120) return "country";
       if (days > 8) return "city";
@@ -328,10 +314,9 @@
       const parts = [`<strong>${i + 1}. ${c.label}</strong>`];
       parts.push(`<div>${fmtRangeMs(c.from, c.to)}</div>`);
       parts.push(`<div>${c.count} photo${c.count === 1 ? "" : "s"}</div>`);
-      parts.push(`<div><a href="${gphotosRangeUrl(c.from, c.to)}" target="_blank" rel="noopener">browse just these dates in Google Photos</a></div>`);
-      // Opening a photo lands in the *unfiltered* library timeline at that date,
-      // so (unlike the date-range search) the user can scroll earlier/later.
-      if (c.url) parts.push(`<div><a href="${c.url}" target="_blank" rel="noopener">open in timeline (scroll around this date)</a></div>`);
+      // Opening a photo lands in the unfiltered library timeline at that date,
+      // so the user can scroll earlier/later around the trip.
+      if (c.url) parts.push(`<div><a href="${c.url}" target="_blank" rel="noopener">Browse in Google Photos</a></div>`);
       return `<div style="font:13px system-ui;line-height:1.45">${parts.join("")}</div>`;
     }
 
@@ -460,15 +445,17 @@
           + `<span class="meta"></span></span>`;
         li.querySelector(".lbl").textContent = c.label;
         li.querySelector(".meta").textContent = `${fmtRangeMs(c.from, c.to)} · ${c.count} photo${c.count === 1 ? "" : "s"}`;
-        const gp = document.createElement("a");
-        gp.className = "gp";
-        gp.href = gphotosRangeUrl(c.from, c.to);
-        gp.target = "_blank";
-        gp.rel = "noopener";
-        gp.title = "Open these dates in Google Photos";
-        gp.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
-        gp.addEventListener("click", e => e.stopPropagation());
-        li.appendChild(gp);
+        if (c.url) {
+          const gp = document.createElement("a");
+          gp.className = "gp";
+          gp.href = c.url;   // opens the photo -> unfiltered library timeline at that date
+          gp.target = "_blank";
+          gp.rel = "noopener";
+          gp.title = "Browse in Google Photos";
+          gp.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
+          gp.addEventListener("click", e => e.stopPropagation());
+          li.appendChild(gp);
+        }
         li.addEventListener("click", () => drillOrFocus(i));
         li.addEventListener("mouseenter", () => setActive(i));
         frag.appendChild(li);
