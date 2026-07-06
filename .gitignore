@@ -43,3 +43,4 @@ docs/timeline.md
 
 # All local state: SQLite DB, thumbnails, timelines (private location data)
 /userdata/
+cf/.wrangler
