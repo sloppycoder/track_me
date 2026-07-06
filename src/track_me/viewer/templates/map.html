@@ -327,7 +327,13 @@
         backLabel: { country: "countries", city: "cities", area: "areas" }[cur] });
       gran = next;
       syncGranButtons();
-      const pad = Math.max(DAY, (c.to - c.from) * 0.04);
+      // Narrow to exactly this place's span. Clusters are built from contiguous
+      // time-ordered runs, so [c.from, c.to] contains only this place's own
+      // photos — drilling stays hierarchical (into Singapore shows Singapore's
+      // districts, never a neighbouring country). Widen only a lone-photo span
+      // so the selection box stays visible/draggable; never by a whole day
+      // (that would sweep in the day-before/after and break the hierarchy).
+      const pad = c.to > c.from ? 0 : 30 * 60 * 1000; // 30 min around a single photo
       selStart = clamp(c.from - pad, domainMin, domainMax);
       selEnd = clamp(c.to + pad, domainMin, domainMax);
       render(true); paintSelection(); syncDrillBack();
