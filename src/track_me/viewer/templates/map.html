@@ -46,6 +46,10 @@
     #places .body { min-width: 0; }
     #places .lbl { font-weight: 600; }
     #places .meta { display: block; font-size: .76rem; color: var(--muted); }
+    #places .gp { margin-left: auto; align-self: center; flex: 0 0 auto; display: inline-flex;
+      color: var(--muted); opacity: .5; padding: .2rem; border-radius: 5px; }
+    #places li:hover .gp { opacity: .8; }
+    #places .gp:hover { opacity: 1; color: var(--accent); background: #4285f420; }
     #places .empty { padding: .8rem .85rem; color: var(--muted); }
 
     /* --- bottom time strip --- */
@@ -179,6 +183,20 @@
       return da === db ? da : `${da} – ${db}`;
     }
 
+    // Deep link into Google Photos showing everything shot in [from, to] — the
+    // undocumented but working `#date_range:YYYYMMDD-YYYYMMDD` search operator.
+    // Works at every granularity: a country stay opens the whole trip, a city
+    // stay that city's days. (Date-scoped, not place-scoped — Google Photos has
+    // no public URL to filter by location too.)
+    function gphotosRangeUrl(fromMs, toMs) {
+      const ymd = ms => {
+        const x = new Date(ms), p = n => String(n).padStart(2, "0");
+        return `${x.getFullYear()}${p(x.getMonth() + 1)}${p(x.getDate())}`;
+      };
+      return "https://photos.google.com/search/"
+        + encodeURIComponent(`#date_range:${ymd(fromMs)}-${ymd(toMs)}`);
+    }
+
     function autoGran(days) {
       if (days > 120) return "country";
       if (days > 8) return "city";
@@ -310,7 +328,7 @@
       const parts = [`<strong>${i + 1}. ${c.label}</strong>`];
       parts.push(`<div>${fmtRangeMs(c.from, c.to)}</div>`);
       parts.push(`<div>${c.count} photo${c.count === 1 ? "" : "s"}</div>`);
-      if (c.url) parts.push(`<div><a href="${c.url}" target="_blank" rel="noopener">open in Google Photos</a></div>`);
+      parts.push(`<div><a href="${gphotosRangeUrl(c.from, c.to)}" target="_blank" rel="noopener">browse these dates in Google Photos</a></div>`);
       return `<div style="font:13px system-ui;line-height:1.45">${parts.join("")}</div>`;
     }
 
@@ -320,36 +338,37 @@
         .forEach(b => b.classList.toggle("on", b.dataset.g === gran));
     }
 
-    // Clicking a place drills into it: force the next finer level and narrow the
-    // time window to that place's span, so country → its cities → its areas. At
-    // the finest level there's nothing to drill into, so just show its photos.
+    // Clicking a place drills into it: jump to the next finer level that actually
+    // breaks the place into more than one *distinctly-labelled* marker, narrowing
+    // the time window to that place's span (country → its cities → …). If nothing
+    // finer adds a real distinction (e.g. Singapore is one city whose neighbourhoods
+    // would all just read "Singapore"), don't drill into a list of identical rows —
+    // just focus the place and show its popup (dates + Google Photos link).
     function drillOrFocus(i) {
       const c = lastClusters[i];
       if (!c) return;
       const cur = effGran();
-      let next = GRAN_ORDER[Math.min(GRAN_ORDER.indexOf(cur) + 1, GRAN_ORDER.length - 1)];
-      if (next === cur) { focusCluster(i, true); return; }
+      if (cur === "area") { focusCluster(i, true); return; } // already the finest level
+      // Window = exactly this place's span. Clusters are built from contiguous
+      // time-ordered runs, so [c.from, c.to] holds only this place's own photos
+      // (drilling stays hierarchical — never bleeds into a neighbour). Widen only
+      // a lone-photo span so the selection box stays visible/draggable.
+      const pad = c.to > c.from ? 0 : 30 * 60 * 1000; // 30 min around a single photo
+      const ws = clamp(c.from - pad, domainMin, domainMax);
+      const we = clamp(c.to + pad, domainMin, domainMax);
+      const win = POINTS.filter(p => p.ms >= ws && p.ms <= we);
+      // Shallowest finer level that yields >1 distinct label — skip dead levels
+      // (one marker, or many markers that all read the same name).
+      let target = null;
+      for (let gi = GRAN_ORDER.indexOf(cur) + 1; gi < GRAN_ORDER.length; gi++) {
+        const g = GRAN_ORDER[gi];
+        if (new Set(cluster(win, g).map(x => x.label)).size > 1) { target = g; break; }
+      }
+      if (!target) { focusCluster(i, true); return; } // nothing finer to distinguish
       // remember where we came from so ← Back can restore level + window
       drillStack.push({ gran, selStart, selEnd,
         backLabel: { country: "countries", city: "cities", area: "areas" }[cur] });
-      // Narrow to exactly this place's span. Clusters are built from contiguous
-      // time-ordered runs, so [c.from, c.to] contains only this place's own
-      // photos — drilling stays hierarchical (into Singapore shows Singapore's
-      // districts, never a neighbouring country). Widen only a lone-photo span
-      // so the selection box stays visible/draggable; never by a whole day
-      // (that would sweep in the day-before/after and break the hierarchy).
-      const pad = c.to > c.from ? 0 : 30 * 60 * 1000; // 30 min around a single photo
-      selStart = clamp(c.from - pad, domainMin, domainMax);
-      selEnd = clamp(c.to + pad, domainMin, domainMax);
-      // Skip past any finer level that wouldn't actually split this place into
-      // more than one marker — a single-item level is a dead click (you'd just
-      // see the same place relabelled, e.g. a country whose only city is the one
-      // you clicked). Advance until the level yields >1 marker or we hit `area`.
-      const win = pointsInWindow();
-      while (next !== "area" && cluster(win, next).length <= 1) {
-        next = GRAN_ORDER[GRAN_ORDER.indexOf(next) + 1];
-      }
-      gran = next;
+      selStart = ws; selEnd = we; gran = target;
       syncGranButtons();
       render(true); paintSelection(); syncDrillBack();
     }
@@ -438,6 +457,15 @@
           + `<span class="meta"></span></span>`;
         li.querySelector(".lbl").textContent = c.label;
         li.querySelector(".meta").textContent = `${fmtRangeMs(c.from, c.to)} · ${c.count} photo${c.count === 1 ? "" : "s"}`;
+        const gp = document.createElement("a");
+        gp.className = "gp";
+        gp.href = gphotosRangeUrl(c.from, c.to);
+        gp.target = "_blank";
+        gp.rel = "noopener";
+        gp.title = "Open these dates in Google Photos";
+        gp.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
+        gp.addEventListener("click", e => e.stopPropagation());
+        li.appendChild(gp);
         li.addEventListener("click", () => drillOrFocus(i));
         li.addEventListener("mouseenter", () => setActive(i));
         frag.appendChild(li);
