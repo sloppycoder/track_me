@@ -328,7 +328,10 @@
       const parts = [`<strong>${i + 1}. ${c.label}</strong>`];
       parts.push(`<div>${fmtRangeMs(c.from, c.to)}</div>`);
       parts.push(`<div>${c.count} photo${c.count === 1 ? "" : "s"}</div>`);
-      parts.push(`<div><a href="${gphotosRangeUrl(c.from, c.to)}" target="_blank" rel="noopener">browse these dates in Google Photos</a></div>`);
+      parts.push(`<div><a href="${gphotosRangeUrl(c.from, c.to)}" target="_blank" rel="noopener">browse just these dates in Google Photos</a></div>`);
+      // Opening a photo lands in the *unfiltered* library timeline at that date,
+      // so (unlike the date-range search) the user can scroll earlier/later.
+      if (c.url) parts.push(`<div><a href="${c.url}" target="_blank" rel="noopener">open in timeline (scroll around this date)</a></div>`);
       return `<div style="font:13px system-ui;line-height:1.45">${parts.join("")}</div>`;
     }
 
