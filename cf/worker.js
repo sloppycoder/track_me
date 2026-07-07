@@ -29,7 +29,7 @@
 
 const ROUTES = {
   "/trackme": "https://track-me-950978288232.us-west1.run.app",
-  // "/budget":  "https://budget-yyyy.run.app",
+  "/expense": "https://expense-950978288232.us-west1.run.app",
   // "/notes":   "https://notes-zzzz.run.app",
 };
 
