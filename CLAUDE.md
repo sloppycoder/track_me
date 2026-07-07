@@ -23,7 +23,7 @@ src/track_me/
 ```
 
 ## Key Dependencies
-- Python 3.12+
+- Python 3.13+
 - UV package manager (`uv.lock` present) — use `uv sync`, `uv add`, `uv run`.
 
 ## Code Quality

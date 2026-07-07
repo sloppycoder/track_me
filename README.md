@@ -12,14 +12,14 @@ of truth you keep.
 
 | Tool | Purpose |
 | --- | --- |
-| Python 3.12 + stdlib `sqlite3` | catalog + data layer (no ORM) |
+| Python 3.13 + stdlib `sqlite3` | catalog + data layer (no ORM) |
 | [Flask](https://flask.palletsprojects.com/) | the Google Maps timeline viewer |
 | [H3](https://h3geo.org/) | spatial cells for batched geocoding + clustering |
 | Google Maps API | reverse geocoding + the map viewer |
 | [uv](https://docs.astral.sh/uv/) | dependency + virtualenv management |
 | [ruff](https://docs.astral.sh/ruff/) / [ty](https://github.com/astral-sh/ty) | lint + format / type checking |
 
-Requires **Python 3.12+**. Not Django; not a web app — a CLI plus a tiny local
+Requires **Python 3.13+**. Not Django; not a web app — a CLI plus a tiny local
 viewer. All code lives under `src/track_me/`.
 
 ## Setup

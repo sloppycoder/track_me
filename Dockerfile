@@ -2,7 +2,7 @@
 # --------------------------------------------------------------------------- #
 # stage 1: build a self-contained virtualenv with uv                          #
 # --------------------------------------------------------------------------- #
-FROM python:3.12-bookworm AS builder
+FROM python:3.13-bookworm AS builder
 LABEL org.opencontainers.image.source="https://github.com/sloppycoder/track_me"
 LABEL org.opencontainers.image.description="track_me travel-timeline viewer"
 
@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # --------------------------------------------------------------------------- #
 # stage 2: slim runtime                                                       #
 # --------------------------------------------------------------------------- #
-FROM python:3.12-slim-bookworm
+FROM python:3.13-slim-bookworm
 
 # unprivileged runtime user
 RUN addgroup --system app && adduser --system --group app
