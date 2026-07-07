@@ -5,10 +5,15 @@ gate verifies the Cloudflare Access JWT — an RS256 token signed by Cloudflare 
 against the team's JWKS (fetched once, cached an hour) and checks its ``aud``
 claim against ``CF_ACCESS_AUD``.
 
-The gate is transparent when the request is plain HTTP
-(``X-Forwarded-Proto`` != ``https``) — local dev; ``track-me serve`` over
-``http://localhost`` sends no such header, so the developer is never
-challenged.
+The gate is transparent for local development: a request whose Host is a
+loopback address (``127.0.0.1``/``localhost``) — i.e. ``track-me serve`` on the
+developer's box — skips the JWT check. The Host header is used rather than
+``X-Forwarded-Proto`` because the latter is trivially client-spoofable (and
+``ProxyFix`` folds it into ``request.scheme``), which would let anyone bypass the
+gate by hitting the public Cloud Run URL with ``X-Forwarded-Proto: http``. The
+Host is safe: ``ProxyFix`` runs with ``x_host=0`` so ``X-Forwarded-Host`` is
+ignored, and Cloud Run's front end only routes its own domains to the container,
+so a forged ``Host: 127.0.0.1`` never reaches us in production.
 
 **Fail-open when unconfigured.** Unlike the fund_researcher original (which
 rejects an HTTPS request when auth isn't configured), this gate *allows* the
@@ -36,6 +41,24 @@ logger = logging.getLogger(__name__)
 _jwks_cache: dict = {}
 _jwks_fetched_at: float = 0.0
 _JWKS_TTL = 3600
+
+# Loopback hostnames that mark a request as genuine local dev (`track-me serve`).
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _is_local_request() -> bool:
+    """True when the request's Host is a loopback address — local dev, no gate.
+
+    Uses the Host header (not the spoofable X-Forwarded-Proto): ProxyFix runs with
+    x_host=0 so X-Forwarded-Host is ignored, and Cloud Run only routes its own
+    domains to the container, so a forged ``Host: 127.0.0.1`` can't reach us in prod.
+    """
+    host = request.host or ""
+    if host.startswith("["):  # IPv6 literal, e.g. [::1]:5000
+        host = host[1 : host.index("]")] if "]" in host else host
+    else:
+        host = host.rsplit(":", 1)[0]  # strip :port
+    return host in _LOOPBACK_HOSTS
 
 
 def _get_jwks(team_domain: str) -> dict:
@@ -78,8 +101,8 @@ def init_auth(app: Flask) -> None:
     def _require_cf_jwt():
         if not enabled:
             return None  # fail-open: auth off -> allow
-        if request.headers.get("X-Forwarded-Proto", "http") != "https":
-            return None  # local dev over HTTP
+        if _is_local_request():
+            return None  # local `track-me serve` over loopback -> no gate
         token = request.headers.get("Cf-Access-Jwt-Assertion") or request.cookies.get(
             "CF_Authorization"
         )
