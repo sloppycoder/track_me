@@ -59,7 +59,6 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 # gate (fail-open). Swap "ignore" for the real Access-app AUD to turn it on.
 CF_ACCESS_TEAM_DOMAIN = os.getenv("CF_ACCESS_TEAM_DOMAIN", "")
 CF_ACCESS_AUD = os.getenv("CF_ACCESS_AUD", "")
-SKIP_JWT = os.getenv("SKIP_JWT") == "1"
 
 
 def ensure_dirs() -> None:

@@ -5,12 +5,10 @@ gate verifies the Cloudflare Access JWT — an RS256 token signed by Cloudflare 
 against the team's JWKS (fetched once, cached an hour) and checks its ``aud``
 claim against ``CF_ACCESS_AUD``.
 
-The gate is transparent in two cases:
-
-* ``SKIP_JWT=1`` — explicit escape hatch.
-* the request is plain HTTP (``X-Forwarded-Proto`` != ``https``) — local dev;
-  ``track-me serve`` over ``http://localhost`` sends no such header, so the
-  developer is never challenged.
+The gate is transparent when the request is plain HTTP
+(``X-Forwarded-Proto`` != ``https``) — local dev; ``track-me serve`` over
+``http://localhost`` sends no such header, so the developer is never
+challenged.
 
 **Fail-open when unconfigured.** Unlike the fund_researcher original (which
 rejects an HTTPS request when auth isn't configured), this gate *allows* the
@@ -78,7 +76,7 @@ def init_auth(app: Flask) -> None:
 
     @app.before_request
     def _require_cf_jwt():
-        if config.SKIP_JWT or not enabled:
+        if not enabled:
             return None  # fail-open: auth off -> allow
         if request.headers.get("X-Forwarded-Proto", "http") != "https":
             return None  # local dev over HTTP

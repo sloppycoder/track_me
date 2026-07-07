@@ -1,9 +1,9 @@
 """Tests for the Cloudflare Access JWT gate (track_me/viewer/auth.py).
 
-Covers the escape hatches (SKIP_JWT, plain HTTP), the track_me-specific
-fail-open behaviour when CF_ACCESS_* is unset, and the configured HTTPS path
-(missing/invalid/valid token). The JWT verification itself is monkeypatched so
-no network call or real signing key is needed.
+Covers the plain HTTP escape hatch, the track_me-specific fail-open behaviour
+when CF_ACCESS_* is unset, and the configured HTTPS path (missing/invalid/valid
+token). The JWT verification itself is monkeypatched so no network call or real
+signing key is needed.
 """
 
 from __future__ import annotations
@@ -15,15 +15,14 @@ from track_me import config
 from track_me.viewer import auth as auth_mod
 
 
-def _make_client(monkeypatch, *, team_domain="", audience="", skip_jwt=False):
+def _make_client(monkeypatch, *, team_domain="", audience=""):
     """A fresh Flask app with the gate installed and one trivial route.
 
     init_auth captures the CF config at registration time, so set it before
-    building the app; SKIP_JWT is read per-request.
+    building the app.
     """
     monkeypatch.setattr(config, "CF_ACCESS_TEAM_DOMAIN", team_domain)
     monkeypatch.setattr(config, "CF_ACCESS_AUD", audience)
-    monkeypatch.setattr(config, "SKIP_JWT", skip_jwt)
 
     app = Flask(__name__)
     auth_mod.init_auth(app)
@@ -39,13 +38,6 @@ def test_plain_http_is_allowed(monkeypatch):
     """No X-Forwarded-Proto (local dev) -> transparent even when configured."""
     client = _make_client(monkeypatch, team_domain="vino9", audience="aud123")
     assert client.get("/ping").status_code == 200
-
-
-def test_skip_jwt_is_allowed(monkeypatch):
-    """SKIP_JWT=1 short-circuits the gate on HTTPS."""
-    client = _make_client(monkeypatch, team_domain="vino9", audience="aud123", skip_jwt=True)
-    resp = client.get("/ping", headers={"X-Forwarded-Proto": "https"})
-    assert resp.status_code == 200
 
 
 def test_https_unconfigured_fails_open(monkeypatch):
