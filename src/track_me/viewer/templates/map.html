@@ -445,17 +445,29 @@
       camBusyTimer = setTimeout(() => { camBusy = false; lastMapZoom = map.getZoom(); }, 600);
     }
 
+    // Render the place list. Only the pins currently VISIBLE in the map viewport are
+    // listed, so the panel always matches what you see on the map. Each row keeps its
+    // original cluster index (list "4" == map marker "4"), so numbering may be
+    // non-contiguous when some pins are off-screen — that's intentional. Re-run on map
+    // `idle` (pan/zoom) to keep it in sync. Legacy stays mode (no POINTS) never filters.
     function renderList(clusters) {
       const ul = document.getElementById("places");
+      const count = document.getElementById("count-note");
       ul.innerHTML = "";
       if (!clusters.length) {
         ul.innerHTML = `<li class="empty">No photos in this window.</li>`;
+        count.textContent = "0 places";
         return;
       }
+      const bounds = POINTS.length ? map?.getBounds() : null;
       const frag = document.createDocumentFragment();
+      let shown = 0;
       clusters.forEach((c, i) => {
+        if (bounds && !bounds.contains({ lat: c.lat, lng: c.lng })) return; // off-screen
+        shown++;
         const li = document.createElement("li");
         li.dataset.i = i;
+        if (i === activeIdx) li.classList.add("active");
         li.innerHTML = `<span class="n">${i + 1}</span><span class="body">`
           + `<span class="lbl"></span>`
           + `<span class="meta"></span></span>`;
@@ -476,7 +488,9 @@
         li.addEventListener("mouseenter", () => setActive(i));
         frag.appendChild(li);
       });
-      ul.appendChild(frag);
+      if (shown) ul.appendChild(frag);
+      else ul.innerHTML = `<li class="empty">No pins in view — pan or zoom out.</li>`;
+      count.textContent = `${shown} place${shown === 1 ? "" : "s"}`;
     }
 
     function render(fit) {
@@ -494,8 +508,7 @@
       const gLabel = { country: "countries", city: "cities", area: "areas" }[g];
       document.getElementById("gran-note").textContent =
         (gran === "auto" ? `Auto → ${gLabel}` : gLabel);
-      document.getElementById("count-note").textContent =
-        `${clusters.length} place${clusters.length === 1 ? "" : "s"}`;
+      // count-note ("N places") is set by renderList — it reflects the pins in view.
       if (fit) writeUrl(); // persist the settled view so it's bookmarkable
     }
 
@@ -688,6 +701,7 @@
       map.addListener("idle", () => {
         if (camBusy) { camBusy = false; clearTimeout(camBusyTimer); }
         lastMapZoom = map.getZoom();
+        renderList(lastClusters); // the list follows the settled viewport (pan or zoom)
       });
       map.addListener("zoom_changed", () => {
         const z = map.getZoom();
