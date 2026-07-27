@@ -74,11 +74,7 @@
       "Bash(pkill:*)",
       "Bash(git push:*)"
     ],
-    "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)"
-    ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "auto"
   },
   "includeCoAuthoredBy": false
 }

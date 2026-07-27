@@ -1,0 +1,13 @@
+[mcp_servers.playwright]
+command = "npx"
+args = [
+  "-y",
+  "@playwright/mcp@latest",
+  "--headless",
+  "--isolated",
+  "--allowed-origins",
+  "http://127.0.0.1:*;http://localhost:*;https://maps.googleapis.com;https://maps.gstatic.com;https://fonts.googleapis.com;https://fonts.gstatic.com",
+]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+default_tools_approval_mode = "approve"
