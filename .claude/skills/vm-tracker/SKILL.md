@@ -8,7 +8,7 @@ description: |
   new `tracker-base-<yyyymmdd>`, then delete the VM and its disks.
   Creates and deletes billed cloud resources, so it is user-invoked only.
   Usage: "vm-tracker [create|retire] [VM_NAME] [options in words]"
-  Examples: "vm-tracker", "vm-tracker create 4 cpus 16GB spot",
+  Examples: "vm-tracker", "vm-tracker create 4 cpus 16GB",
   "vm-tracker create no scratch", "vm-tracker retire"
 disable-model-invocation: true
 ---
@@ -51,7 +51,6 @@ none). Skip the question only if the request already states it ("no scratch",
 | a VM name | positional `VM_NAME` (default `tracker`) |
 | `e2-standard-4`, … | `--machine-type TYPE` |
 | "4 cpus 16GB" | `--cpus 4 --memory 16` (family `e2` unless they name one: `--family n2d`) |
-| spot / cheap | `--spot` |
 | a specific snapshot | `--snapshot NAME` (default: newest `tracker-base-*`) |
 | boot disk bigger | `--boot-size GB` (must be ≥ snapshot size, 20) |
 
@@ -64,7 +63,7 @@ List snapshots with:
 .claude/skills/vm-tracker/create_vm.sh --dry-run <flags> [VM_NAME]
 ```
 
-Show the plan lines (snapshot, boot and scratch disks, machine, spot) and get
+Show the plan lines (snapshot, boot and scratch disks, machine) and get
 a go-ahead before creating anything. If the VM or a disk already exists, do
 **not** delete anything: tell the user and suggest another VM name.
 
@@ -99,7 +98,7 @@ ssh-keygen -R <alias>; ssh-keygen -R <old-ip>; ssh-keygen -R <new-ip>
 Wait for sshd (retry `ssh -o BatchMode=yes -o ConnectTimeout=8 <alias> true`
 for a couple of minutes; the first boot from a snapshot can be slow), then
 check `df -h / /mnt/scratch`, `mountpoint /mnt/vinolab` and `sudo -n true`. Report: VM name, machine,
-spot or not, snapshot used, disks (with scratch size), public IP, and the ssh
+snapshot used, disks (with scratch size), public IP, and the ssh
 config change. The snapshot's fstab mounts bucket `vinolab` at `/mnt/vinolab` (gcsfuse,
 `worker-vm` has `storage.objectUser` on it); if `systemctl is-system-running` says
 `degraded`, check `systemctl --failed` and report it. The snapshot does not

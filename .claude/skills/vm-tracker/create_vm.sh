@@ -11,7 +11,6 @@
 #   --machine-type TYPE   predefined type (default e2-standard-2)
 #   --cpus N --memory GB  custom machine (e2 family unless --family given)
 #   --family FAMILY       custom machine family (default e2)
-#   --spot                Spot VM (cheaper, can be preempted)
 #   --snapshot NAME       boot snapshot (default: newest tracker-base-*)
 #   --boot-size GB        boot disk size (default: snapshot's source size)
 #   --scratch-size GB     blank scratch disk, mounted at /mnt/scratch (default 150)
@@ -34,7 +33,6 @@ MACHINE_TYPE=""
 CPUS=""
 MEMORY_GB=""
 FAMILY="e2"
-SPOT=0
 SNAPSHOT=""
 BOOT_DISK_SIZE_GB=""
 SCRATCH_SIZE_GB=150
@@ -53,7 +51,6 @@ while [[ $# -gt 0 ]]; do
     --cpus) CPUS="$2"; shift 2 ;;
     --memory) MEMORY_GB="$2"; shift 2 ;;
     --family) FAMILY="$2"; shift 2 ;;
-    --spot) SPOT=1; shift ;;
     --snapshot) SNAPSHOT="$2"; shift 2 ;;
     --boot-size) BOOT_DISK_SIZE_GB="$2"; shift 2 ;;
     --scratch-size) SCRATCH_SIZE_GB="$2"; shift 2 ;;
@@ -117,12 +114,7 @@ if (( SCRATCH_SIZE_GB > 0 )) && exists disks "${SCRATCH_DISK}"; then
   die "disk ${SCRATCH_DISK} already exists in ${ZONE}"
 fi
 
-SCHED_ARGS=()
-[[ "${SPOT}" -eq 1 ]] && SCHED_ARGS=(--provisioning-model=SPOT
-                                     --instance-termination-action=STOP)
-
-echo ">> Plan: ${VM_NAME} in ${PROJECT}/${ZONE}, ${MACHINE_DESC}" \
-     "$([[ "${SPOT}" -eq 1 ]] && echo '(spot)')"
+echo ">> Plan: ${VM_NAME} in ${PROJECT}/${ZONE}, ${MACHINE_DESC}"
 if [[ "${DRY_RUN}" -eq 1 ]]; then
   echo ">> Dry run: nothing created."
   exit 0
@@ -190,7 +182,6 @@ gcloud compute instances create "${VM_NAME}" \
   --project="${PROJECT}" --zone="${ZONE}" \
   "${MACHINE_ARGS[@]}" \
   "${DISK_ARGS[@]}" \
-  ${SCHED_ARGS[@]+"${SCHED_ARGS[@]}"} \
   ${META_ARGS[@]+"${META_ARGS[@]}"} \
   --network-interface=network=default,subnet=default,network-tier=PREMIUM \
   --service-account="${SERVICE_ACCOUNT}" \
