@@ -7,7 +7,7 @@ LABEL org.opencontainers.image.source="https://github.com/sloppycoder/track_me"
 LABEL org.opencontainers.image.description="track_me MCP server (read-only photo-catalog tools)"
 
 # uv: fast, lockfile-driven installer. Copy the static binary from the official image.
-COPY --from=ghcr.io/astral-sh/uv:0.7.19 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
 
 ENV UV_PROJECT_ENVIRONMENT=/app/venv \
     UV_COMPILE_BYTECODE=1 \
