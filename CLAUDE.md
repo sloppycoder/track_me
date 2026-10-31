@@ -124,7 +124,7 @@ once per distinct visit) → `userdata/timelines/<id>.json`, rendered by the vie
 `src/track_me/viewer/app.py` (Flask) lists `userdata/timelines/*.json` and renders one on the
 Google Maps JS API, injecting `GOOGLE_MAPS_API_KEY` (from `.env`) server-side. The
 map pages read only the JSON files; the `/build` page's APIs open the DB
-read-only. Launch with `track-me serve` (local only — it is no longer deployed).
+read-only. Launch with `track-me serve` (local only; not deployed).
 
 The map UI (`map.html`) is **client-side interactive**: when the JSON carries a
 `points` payload (compact `point_fields` rows — see `timeline.points_payload`,

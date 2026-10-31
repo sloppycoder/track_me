@@ -151,6 +151,3 @@ jobs:
             # one small file per key) on the bucket, so a restart or scale-to-zero
             # doesn't sign ChatGPT out. max-instances=1 keeps token refresh
             # single-writer.
-            #
-            # --set-env-vars / --set-secrets REPLACE the old viewer's settings
-            # (Cloudflare Access vars, Maps key), which this service no longer uses.

@@ -11,8 +11,7 @@ The service exposes read-only catalog tools at **`<SERVICE_URL>/mcp`** for chat
 clients (ChatGPT, Claude …). Access is **Google OAuth** handled by the app itself
 (FastMCP's OAuth proxy) and limited to the emails in `MCP_ALLOWED_EMAILS`; Cloud
 Run runs `--allow-unauthenticated` because chat clients can't mint Cloud Run IAM
-tokens. The old map viewer is no longer deployed (run it locally with
-`track-me serve`).
+tokens. The map viewer is not deployed; it runs locally with `track-me serve`.
 
 Runtime state (the SQLite DB) is **not** baked into the image — a GCS bucket is
 mounted at `/mnt/gcs` and the app is pointed at it via
@@ -60,8 +59,9 @@ it on every deploy:
 - the repo **variable** `MCP_BASE_URL` if set (**Settings → Secrets and
   variables → Actions → Variables**) — use this for a custom domain, or
 - otherwise the existing `track-me` service's URL (`gcloud run services describe
-  track-me --region us-west1 --format='value(status.url)'`). The URL stays the
-  same across deploys, so replacing the old viewer service keeps it.
+  track-me --region us-west1 --format='value(status.url)'`), which stays the same
+  across deploys. On the very first deploy no service exists yet, so set
+  `MCP_BASE_URL` to `https://track-me-<PROJECT_NUM>.us-west1.run.app`.
 
 The deploy job prints both the MCP endpoint and the redirect URI as a notice.
 
@@ -104,9 +104,6 @@ Manager keeps them (and your email) out of the repo. The tokens the server hands
 to clients are signed with a key derived from the client secret, so **rotating
 the client secret signs every client out** (they just sign in again).
 
-The old `track-me-maps-key` secret is no longer used by the service; delete it
-whenever convenient.
-
 ### 4. Seed the bucket with the catalog
 
 Expected layout:
@@ -144,8 +141,7 @@ ids out of Actions logs.
 
 Push to `main`, or trigger **Actions → python_build → Run workflow**. The `deploy`
 job builds the image, pushes it to Artifact Registry, resolves the service URL,
-and runs `gcloud run deploy`. `--set-env-vars` / `--set-secrets` replace the whole
-set, so the old viewer's settings (Cloudflare Access vars, Maps key) are dropped.
+and runs `gcloud run deploy`.
 
 ## Connect ChatGPT
 

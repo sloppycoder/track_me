@@ -132,7 +132,7 @@ is **not** in the image — a GCS bucket is mounted at `/mnt/gcs` and the app re
 it via `TRACKME_USERDATA=/mnt/gcs/track_me`. Deploy auth is keyless via **Workload
 Identity Federation** (no service-account keys in GitHub). Users authenticate to
 the server with **Google OAuth**, limited to an email allowlist. The map viewer is
-no longer deployed; run it locally with `track-me serve`.
+not deployed; it runs locally with `track-me serve`.
 
 **`DEPLOY.md`** has the full runbook (what's already provisioned, the remaining
 one-time steps, and how to run the image locally). The identity setup below is
