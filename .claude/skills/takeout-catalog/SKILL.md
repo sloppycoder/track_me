@@ -53,7 +53,7 @@ It may not exist yet; create it
 with the header below. Always pull, edit, push:
 
 ```bash
-SCRATCH=${SCRATCH:-$HOME/scratch/takeout}; mkdir -p "$SCRATCH"
+SCRATCH=${SCRATCH:-/mnt/scratch/tmp}; mkdir -p "$SCRATCH"
 rclone copyto gdrive:CATALOG.md "$SCRATCH/CATALOG.md" 2>/dev/null || true
 # ...edit...
 rclone copyto "$SCRATCH/CATALOG.md" gdrive:CATALOG.md
@@ -141,5 +141,6 @@ The export time is already in the index file name, so there is no separate colum
 
 - Only the small `-001.zip` index files are downloaded by default. Never pull the
   multi-GB parts unless step 4 says it's unavoidable.
-- Don't unzip data parts or touch the track_me database; this skill only catalogs.
+- Don't unzip data parts or touch the track_me database; this skill only catalogs
+  (downloading + unzipping a batch is the `takeout-fetch` skill).
 - Never delete anything from Drive.
