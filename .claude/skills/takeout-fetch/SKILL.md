@@ -50,7 +50,7 @@ fetch.sh <batch> [--mode auto|all|per-part] [--zips DIR] [--out DIR] [--delete-z
    .claude/skills/takeout-fetch/fetch.sh <batch> >"$LOG" 2>&1   # run_in_background
    ```
    Check on it with `tail -5 "$LOG"`. It is **re-runnable**: if it dies (VM
-   preempted, network), run the same command again. rclone skips zips already
+   restarted, network), run the same command again. rclone skips zips already
    downloaded at the right size, and parts with a marker in `<out>/.fetch-done/`
    aren't unzipped again.
 5. **Report**: the final `extracted N files; index expects N` line, where the files

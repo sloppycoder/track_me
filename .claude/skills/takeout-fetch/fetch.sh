@@ -96,14 +96,19 @@ log "$INDEX: $NPARTS parts, $((ZIP_BYTES / 1000000000)) GB of zips"
 # 3. Index zip -> expected file count and uncompressed size.
 rclone copy "gdrive:$INDEX" "$WORK"
 unzip -oq -d "$WORK" "$WORK/$INDEX" 'Takeout/archive_browser.html'
-read -r EXPECT_FILES UNZ_BYTES < <(python3 -I - "$WORK/Takeout/archive_browser.html" <<'EOF'
+INDEX_INFO=$(python3 -I - "$WORK/Takeout/archive_browser.html" <<'EOF'
 import html, re, sys
 text = html.unescape(re.sub(r"<[^>]+>", "\n", open(sys.argv[1], encoding="utf-8").read()))
 mult = {"KB": 2**10, "MB": 2**20, "GB": 2**30, "TB": 2**40}
 found = re.findall(r"^\s*(\d+) files, ([\d.]+) ([KMGT]B)\s*$", text, re.M)
-print(sum(int(n) for n, _, _ in found), int(sum(float(v) * mult[u] for _, v, u in found)))
+files = sum(int(n) for n, _, _ in found)
+if files == 0:
+    sys.exit("no 'N files, X GB' lines found in archive_browser.html")
+print(files, int(sum(float(v) * mult[u] for _, v, u in found)))
 EOF
-)
+) || die "cannot read the file count / size from the index zip's archive_browser.html"
+read -r EXPECT_FILES UNZ_BYTES <<<"$INDEX_INFO"
+((EXPECT_FILES > 0 && UNZ_BYTES > 0)) || die "index reports $EXPECT_FILES files, $UNZ_BYTES bytes"
 log "index says $EXPECT_FILES files, $((UNZ_BYTES / 1000000000)) GB uncompressed"
 
 # 4. Disk space -> mode. Count what is already on disk from an earlier run.
@@ -139,7 +144,7 @@ extract() {  # <zip file>
     done_marker=$OUT/.fetch-done/$name
     [[ -e $done_marker ]] && { log "skip $name (already unzipped)"; return; }
     log "unzip $name"
-    unzip -q -o -d "$OUT" "$1"
+    unzip -q -o -d "$OUT" "$1" </dev/null
     touch "$done_marker"
 }
 
@@ -150,7 +155,7 @@ if [[ $MODE == all ]]; then
     cut -d';' -f2 "$WORK/parts" >"$WORK/files-from"
     log "downloading $NPARTS parts"
     rclone copy gdrive: "$ZIPS" --files-from "$WORK/files-from" \
-        --transfers 4 --stats 60s --stats-one-line -v
+        --transfers 4 --stats 60s --stats-one-line -v </dev/null
     while IFS=';' read -r size p; do check_size "$ZIPS/$p" "$size"; done <"$WORK/parts"
     log "all parts downloaded and sizes match"
     while IFS=';' read -r size p; do extract "$ZIPS/$p"; done <"$WORK/parts"
@@ -159,7 +164,7 @@ else
     while IFS=';' read -r size p; do
         if [[ -e $OUT/.fetch-done/$p ]]; then log "skip $p (already unzipped)"; continue; fi
         log "download $p"
-        rclone copyto "gdrive:$p" "$ZIPS/$p"
+        rclone copyto "gdrive:$p" "$ZIPS/$p" </dev/null
         check_size "$ZIPS/$p" "$size"
         extract "$ZIPS/$p"
         rm -f "$ZIPS/$p"  # per-part mode: local zip goes once unzipped (never on Drive)

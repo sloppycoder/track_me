@@ -6,6 +6,7 @@ description: Catalog Google Takeout export batches stored in Google Drive (the r
 # Catalog Google Takeout batches
 
 Runs on the processing VM, where `rclone` is configured with a `gdrive:` remote.
+If you are on a laptop, stop: create the VM with `vm-tracker` first.
 
 ## Drive access: always the root of `gdrive:`
 
@@ -23,7 +24,6 @@ deliberate, to prevent accidental changes to other files. Therefore:
   `gdrive:Takeout`, do not search other folders, and do not touch `CATALOG.md`.
 - Only `CATALOG.md` (and scratch files under `$SCRATCH`) may be written. Never
   delete, move or rename anything on `gdrive:`.
-(If you are on a laptop, stop: create the VM with `vm-tracker` first.)
 
 ## Naming convention (verified against the Takeout folder on 2026-10-31)
 
@@ -32,9 +32,8 @@ takeout-<YYYYMMDDTHHMMSSZ>-001.zip        # exactly one per batch; small (80 KB-
 takeout-<YYYYMMDDTHHMMSSZ>-1-001.zip      # data parts: -1-001, -1-002, ... (~2 GB each)
 ```
 
-- The user's rule "one `-001.zip` per batch" holds: 3 batches, 3 such files. But the
-  data parts are numbered `-1-NNN` **starting at `-1-001`**, so `-1-001.zip` also
-  exists. Match the index file with the regex `^takeout-(\d{8}T\d{6}Z)-001\.zip$`
+- There is exactly one `-001.zip` (the index) per batch. The data parts are
+  numbered `-1-NNN` **starting at `-1-001`**, so `-1-001.zip` also exists. Match the index file with the regex `^takeout-(\d{8}T\d{6}Z)-001\.zip$`
   (no `-1-` segment). Do not treat `-1-001.zip` as a batch.
 - **Timestamps can differ by a second between the index and its parts**
   (`...T042324Z-001.zip` vs `...T042325Z-1-0NN.zip`). Group parts to a batch by the
