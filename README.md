@@ -199,5 +199,4 @@ and seeding the bucket are covered in **`DEPLOY.md`**.
 ## More
 
 - **`DEPLOY.md`** — Cloud Run deployment runbook.
-- **`cf/README.md`** — Cloudflare edge: path routing (Worker) + Zero Trust Access.
 - **`CLAUDE.md`** — working agreement for coding agents (structure, commands).
