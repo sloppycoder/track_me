@@ -129,11 +129,32 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
 fi
 
 # --- Create -----------------------------------------------------------------
+# gcloud's long "wait for operation" request is sometimes dropped by a proxy
+# (ProxyError), failing the command although the resource is being created.
+# So each create is followed by wait_ready, which polls with short describe
+# calls and only gives up when the resource never appears.
+CREATE_FAILED=0
+wait_ready() {  # wait_ready <disks|instances> <name> <wanted status>
+  local i st missing=0
+  for i in $(seq 1 120); do
+    st="$(gcloud compute "$1" describe "$2" --project="${PROJECT}" --zone="${ZONE}" \
+      --format="value(status)" 2>/dev/null || true)"
+    if [[ "${st}" == "$3" ]]; then CREATE_FAILED=0; return 0; fi
+    if [[ -z "${st}" ]]; then
+      missing=$((missing + 1))
+      (( CREATE_FAILED == 1 && missing >= 3 )) && die "$1 $2 was not created"
+    fi
+    sleep 5
+  done
+  die "$1 $2 did not reach $3 (last status: ${st:-none})"
+}
+
 echo ">> Creating boot disk ${BOOT_DISK}..."
 gcloud compute disks create "${BOOT_DISK}" \
   --project="${PROJECT}" --zone="${ZONE}" \
   --source-snapshot="${SNAPSHOT}" \
-  --size="${BOOT_DISK_SIZE_GB}" --type="${DISK_TYPE}"
+  --size="${BOOT_DISK_SIZE_GB}" --type="${DISK_TYPE}" || CREATE_FAILED=1
+wait_ready disks "${BOOT_DISK}" READY
 DISK_ARGS=(--disk="name=${BOOT_DISK},boot=yes,auto-delete=yes,device-name=${VM_NAME}")
 
 META_ARGS=()
@@ -141,7 +162,8 @@ if (( SCRATCH_SIZE_GB > 0 )); then
   echo ">> Creating scratch disk ${SCRATCH_DISK}..."
   gcloud compute disks create "${SCRATCH_DISK}" \
     --project="${PROJECT}" --zone="${ZONE}" \
-    --size="${SCRATCH_SIZE_GB}" --type="${DISK_TYPE}"
+    --size="${SCRATCH_SIZE_GB}" --type="${DISK_TYPE}" || CREATE_FAILED=1
+  wait_ready disks "${SCRATCH_DISK}" READY
   DISK_ARGS+=(--disk="name=${SCRATCH_DISK},boot=no,auto-delete=yes,device-name=scratch")
 
   STARTUP="$(mktemp)"
@@ -172,7 +194,8 @@ gcloud compute instances create "${VM_NAME}" \
   ${META_ARGS[@]+"${META_ARGS[@]}"} \
   --network-interface=network=default,subnet=default,network-tier=PREMIUM \
   --service-account="${SERVICE_ACCOUNT}" \
-  --scopes=cloud-platform
+  --scopes=cloud-platform || CREATE_FAILED=1
+wait_ready instances "${VM_NAME}" RUNNING
 
 read -r STATUS IP < <(gcloud compute instances describe "${VM_NAME}" \
   --project="${PROJECT}" --zone="${ZONE}" \
