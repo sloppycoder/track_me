@@ -1,14 +1,31 @@
 ---
 name: takeout-catalog
-description: Catalog Google Takeout export batches stored in Google Drive (gdrive:Takeout) into CATALOG.md - when each was exported and what it contains (Google Photos, Google Fit, or other). Meant to be run ON the processing VM (see provision-vm), not on a laptop. Use when asked to catalog/refresh/audit the Takeout zips.
+description: Catalog Google Takeout export batches stored in Google Drive (the root of the `gdrive:` remote, which is locked to the Takeout folder) into CATALOG.md - when each was exported and what it contains (Google Photos, Google Fit, or other). Meant to be run ON the processing VM (see vm-tracker), not on a laptop. Use when asked to catalog/refresh/audit the Takeout zips.
 ---
 
 # Catalog Google Takeout batches
 
 Runs on the processing VM, where `rclone` is configured with a `gdrive:` remote.
-(If you are on a laptop, stop: provision the VM with `provision-vm` first.)
 
-## Naming convention (verified against `gdrive:Takeout` on 2026-10-31)
+## Drive access: always the root of `gdrive:`
+
+`rclone.conf` sets `root_folder_id` to the Takeout folder, so **the root of `gdrive:`
+*is* the Takeout folder** and rclone cannot see anything else in the Drive. That is
+deliberate, to prevent accidental changes to other files. Therefore:
+
+- Always use bare `gdrive:` paths (`gdrive:`, `gdrive:CATALOG.md`,
+  `gdrive:takeout-...zip`). Never write `gdrive:Takeout/...`; under the restricted
+  root that is a different (probably non-existent) subfolder.
+- **Preflight (do this first, every run):** `rclone lsf gdrive: --format sp`. If it
+  errors, or no file matching `^takeout-\d{8}T\d{6}Z-(\d+-)?\d{3}\.zip$` is
+  listed in the root, **abort**: print what was listed and tell the user the
+  `root_folder_id` / `rclone.conf` may be wrong. Do not fall back to
+  `gdrive:Takeout`, do not search other folders, and do not touch `CATALOG.md`.
+- Only `CATALOG.md` (and scratch files under `$SCRATCH`) may be written. Never
+  delete, move or rename anything on `gdrive:`.
+(If you are on a laptop, stop: create the VM with `vm-tracker` first.)
+
+## Naming convention (verified against the Takeout folder on 2026-10-31)
 
 ```
 takeout-<YYYYMMDDTHHMMSSZ>-001.zip        # exactly one per batch; small (80 KB-350 KB)
@@ -27,14 +44,15 @@ takeout-<YYYYMMDDTHHMMSSZ>-1-001.zip      # data parts: -1-001, -1-002, ... (~2 
 
 ## Catalog file
 
-`gdrive:Takeout/CATALOG.md` is the source of truth. It may not exist yet; create it
+`gdrive:CATALOG.md` (root of the remote, next to the zips) is the source of truth.
+It may not exist yet; create it
 with the header below. Always pull, edit, push:
 
 ```bash
 SCRATCH=${SCRATCH:-$HOME/scratch/takeout}; mkdir -p "$SCRATCH"
-rclone copyto gdrive:Takeout/CATALOG.md "$SCRATCH/CATALOG.md" 2>/dev/null || true
+rclone copyto gdrive:CATALOG.md "$SCRATCH/CATALOG.md" 2>/dev/null || true
 # ...edit...
-rclone copyto "$SCRATCH/CATALOG.md" gdrive:Takeout/CATALOG.md
+rclone copyto "$SCRATCH/CATALOG.md" gdrive:CATALOG.md
 ```
 
 Format: one table row per batch, keyed by the index zip file name.
@@ -55,7 +73,7 @@ Format: one table row per batch, keyed by the index zip file name.
 ## Procedure
 
 1. **List the Drive folder once** with sizes:
-   `rclone lsf gdrive:Takeout --format sp` (size;path). Build the set of index files
+   `rclone lsf gdrive: --format sp` (size;path), after the preflight above. Build the set of index files
    (regex above) and assign each data part to its batch (nearest timestamp, ≤5 s).
    Ignore everything that isn't a `takeout-*.zip` (e.g. `CATALOG.md`).
 2. **Pull `CATALOG.md`** (above). Parse the existing rows.
@@ -64,7 +82,7 @@ Format: one table row per batch, keyed by the index zip file name.
 4. **For each new index file:**
    ```bash
    D=$SCRATCH/<timestamp>; mkdir -p "$D"
-   rclone copy gdrive:Takeout/<index-file> "$D"
+   rclone copy gdrive:<index-file> "$D"
    unzip -l "$D/<index-file>"
    ```
    Decide `Content` from the listing: paths under `Takeout/Google Photos/` → Google
@@ -78,7 +96,7 @@ Format: one table row per batch, keyed by the index zip file name.
 5. **Deleted batches:** any catalogued index file that is no longer in the Drive
    listing → set `Status` to `deleted`. **Never remove the row.** If a `deleted` file
    reappears, set it back to `present`.
-6. **Push `CATALOG.md`** back to `gdrive:Takeout/CATALOG.md`, then print a summary:
+6. **Push `CATALOG.md`** back to `gdrive:CATALOG.md`, then print a summary:
    new batches added, marked deleted, unchanged, and the current table.
 
 ## Rules
