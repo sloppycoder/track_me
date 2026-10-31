@@ -1,101 +1,37 @@
 #!/usr/bin/env bash
+# Retire the tracker VM: stop it, snapshot its boot disk as tracker-base-<yyyymmdd>
+# (UTC date; the next create_vm.sh picks the newest), then delete the VM. The boot
+# disk is deleted with the VM; any attached scratch disk is deleted too and is NOT
+# snapshotted. The VM is deleted only after the snapshot is READY.
 #
-# Snapshot the boot disk of the tracker VM as tracker-base-<yyyymmdd>, then
-# delete the VM and ALL its disks (the scratch disk is NOT preserved).
-# Driven by the vm-tracker skill. Restore with create_vm.sh.
-#
-# Usage:
-#   retire_vm.sh [options] [VM_NAME]          (VM_NAME defaults to "tracker")
-#
-# Options:
-#   --no-stop       snapshot while running (crash-consistent); implied when run
-#                   on the VM itself
-#   --keep-vm       take the snapshot but delete nothing
-#   --zone ZONE     default us-west1-b
-#   --project PROJECT  default vino9-276317
-#   --dry-run       show the plan, change nothing
-#
-# The snapshot is named tracker-base-<YYYYMMDD> (UTC) and inherits the disk's
-# guest-OS features (UEFI), which a snapshot of a hand-built disk would lack.
-
+# usage: retire_vm.sh [--yes]       (without --yes only shows the plan)
 set -euo pipefail
+. "$(dirname "$0")/lib.sh"
 
-PROJECT="vino9-276317"
-ZONE="us-west1-b"
-VM_NAME="tracker"
-NO_STOP=0
-KEEP_VM=0
-DRY_RUN=0
+STATUS="$(vm_status)"
+[[ -n "${STATUS}" ]] || die "instance ${VM} not found"
+BOOT="$(attached_disk boot)"
+SNAP="${SNAPSHOT_OUT:-tracker-base-$(date -u +%Y%m%d)}"   # SNAPSHOT_OUT: for tests
+gcloud compute snapshots describe "${SNAP}" --project="${PROJECT}" >/dev/null 2>&1 \
+  && die "snapshot ${SNAP} already exists (one per day); delete it first if you mean to replace it"
+SCRATCH="$(attached_disk scratch)"
 
-die() { echo "ERROR: $*" >&2; exit 1; }
+echo ">> Will: stop ${VM} (${STATUS}); snapshot ${BOOT} -> ${SNAP}; then delete ${VM}"
+echo "   and its disks${SCRATCH:+ (including scratch ${SCRATCH}, whose data is lost)}."
+[[ "${1:-}" == "--yes" ]] || { echo ">> Not doing it: re-run with --yes."; exit 0; }
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --no-stop) NO_STOP=1; shift ;;
-    --keep-vm) KEEP_VM=1; shift ;;
-    --zone) ZONE="$2"; shift 2 ;;
-    --project) PROJECT="$2"; shift 2 ;;
-    --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
-    -*) die "unknown option $1" ;;
-    *) VM_NAME="$1"; shift ;;
-  esac
-done
-SNAP="tracker-base-$(date -u +%Y%m%d)"
-GC=(--project="${PROJECT}")
-
-SELF="$(curl -sf -m 2 -H 'Metadata-Flavor: Google' \
-  http://metadata.google.internal/computeMetadata/v1/instance/name || true)"
-if [[ "${SELF}" == "${VM_NAME}" && "${NO_STOP}" -eq 0 ]]; then
-  echo ">> Running on ${VM_NAME} itself: snapshotting without stopping."
-  NO_STOP=1
+if [[ "${STATUS}" != "TERMINATED" ]]; then
+  echo ">> Stopping ${VM}..."
+  gcloud compute instances stop "${VM}" "${GC[@]}" \
+    || echo ">> stop reported an error; checking whether it went through..."
+  poll 60 has_status instances "${VM}" TERMINATED || die "${VM} did not stop"
 fi
-
-STATUS="$(gcloud compute instances describe "${VM_NAME}" "${GC[@]}" \
-  --zone="${ZONE}" --format="value(status)" 2>/dev/null)" \
-  || die "instance ${VM_NAME} not found in ${PROJECT}/${ZONE}"
-# "<disk-name> <boot True|False>" per attached disk.
-DISKS="$(gcloud compute instances describe "${VM_NAME}" "${GC[@]}" \
-  --zone="${ZONE}" --format="json(disks)" \
-  | python3 -Ic 'import json,sys
-for d in json.load(sys.stdin)["disks"]:
-    print(d["source"].rsplit("/", 1)[1], d.get("boot", False))')"
-BOOT_DISK="$(awk '$2=="True"{print $1}' <<<"${DISKS}")"
-OTHERS="$(awk '$2!="True"{print $1}' <<<"${DISKS}" | paste -sd' ' -)"
-[[ -n "${BOOT_DISK}" ]] || die "no boot disk found on ${VM_NAME}"
-gcloud compute snapshots describe "${SNAP}" "${GC[@]}" >/dev/null 2>&1 \
-  && die "snapshot ${SNAP} already exists (one per day; delete it or wait)"
-
-echo ">> Plan for ${VM_NAME} (${STATUS}) in ${PROJECT}/${ZONE}:"
-echo "   ${BOOT_DISK} -> ${SNAP}"
-[[ "${NO_STOP}" -eq 0 && "${STATUS}" == "RUNNING" ]] && echo "   stop VM first"
-if [[ "${KEEP_VM}" -eq 1 ]]; then
-  echo "   keep VM and disks"
-else
-  echo "   then DELETE instance ${VM_NAME} and all its disks" \
-       "(not snapshotted, lost: ${OTHERS:-none})"
-fi
-if [[ "${DRY_RUN}" -eq 1 ]]; then
-  echo ">> Dry run: nothing changed."
-  exit 0
-fi
-
-if [[ "${NO_STOP}" -eq 0 && "${STATUS}" == "RUNNING" ]]; then
-  echo ">> Stopping ${VM_NAME}..."
-  gcloud compute instances stop "${VM_NAME}" "${GC[@]}" --zone="${ZONE}"
-fi
-echo ">> Snapshotting ${BOOT_DISK} -> ${SNAP}..."
-gcloud compute disks snapshot "${BOOT_DISK}" "${GC[@]}" --zone="${ZONE}" \
-  --snapshot-names="${SNAP}" --storage-location=us
-ST="$(gcloud compute snapshots describe "${SNAP}" "${GC[@]}" --format="value(status)")"
-[[ "${ST}" == "READY" ]] || die "snapshot ${SNAP} is ${ST}; not deleting the VM"
-echo ">> Snapshot ${SNAP} READY."
-
-if [[ "${KEEP_VM}" -eq 1 ]]; then
-  echo "RESULT ${VM_NAME} kept ${SNAP}"
-  exit 0
-fi
-echo ">> Deleting ${VM_NAME} and its disks..."
-echo "RESULT ${VM_NAME} deleted ${SNAP}"
-gcloud compute instances delete "${VM_NAME}" "${GC[@]}" --zone="${ZONE}" \
-  --delete-disks=all --quiet
+echo ">> Snapshotting ${BOOT} -> ${SNAP}..."
+gcloud compute disks snapshot "${BOOT}" "${GC[@]}" --snapshot-names="${SNAP}" --storage-location=us \
+  || echo ">> snapshot reported an error; checking whether it went through..."
+poll 120 snapshot_ready "${SNAP}" || die "snapshot ${SNAP} is not READY; ${VM} was NOT deleted"
+echo ">> ${SNAP} is READY. Deleting ${VM} and its disks..."
+gcloud compute instances delete "${VM}" "${GC[@]}" --delete-disks=all --quiet \
+  || echo ">> delete reported an error; checking whether it went through..."
+poll 36 gone instances "${VM}" || die "${VM} still exists"
+echo ">> Retired. Restore with create_vm.sh (uses the newest tracker-base-*)."

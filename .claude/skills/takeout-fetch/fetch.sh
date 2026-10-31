@@ -32,7 +32,7 @@ WORK=$SCRATCH/.fetch-$TS
 case $SCRATCH$ZIPS$OUT in
     */mnt/scratch*|/mnt/scratch*)
         mountpoint -q /mnt/scratch \
-            || { echo "ABORT: /mnt/scratch is not mounted; run: vm-tracker scratch add" >&2; exit 1; } ;;
+            || { echo "ABORT: /mnt/scratch is not mounted; run: vm-tracker add scratch" >&2; exit 1; } ;;
 esac
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT  # listing/catalog/index copies; re-fetched on every run

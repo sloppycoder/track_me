@@ -1,151 +1,41 @@
 #!/usr/bin/env bash
+# Create the tracker VM from the newest tracker-base-<yyyymmdd> snapshot, then
+# point the `tracker` ssh alias at it. Boot disk only (see add_scratch.sh).
 #
-# Create the "tracker" processing VM from the newest tracker-base-* boot
-# snapshot (boot disk only; a scratch disk is added later with scratch_disk.sh).
-# Driven by the vm-tracker skill (see SKILL.md); runnable by hand too.
-#
-# Usage:
-#   create_vm.sh [options] [VM_NAME]          (VM_NAME defaults to "tracker")
-#
-# Options:
-#   --machine-type TYPE   predefined type (default e2-standard-2)
-#   --cpus N --memory GB  custom machine (e2 family unless --family given)
-#   --family FAMILY       custom machine family (default e2)
-#   --snapshot NAME       boot snapshot (default: newest tracker-base-*)
-#   --boot-size GB        boot disk size (default: snapshot's source size)
-#   --zone ZONE           default us-west1-b
-#   --project PROJECT     default vino9-276317
-#   --dry-run             resolve and validate everything, create nothing
-#
-# No scratch disk is created: add/remove one on the running VM with
-# scratch_disk.sh. aidev's ssh key travels inside the snapshot, so no ssh-keys metadata is set.
-#
-# On success the last line of stdout is:  RESULT <vm-name> <status> <ip>
-
+# usage: create_vm.sh [--machine-type TYPE] [--snapshot NAME]
+#   defaults: e2-standard-2 (2 vCPU / 8 GB), newest tracker-base-* snapshot
 set -euo pipefail
+. "$(dirname "$0")/lib.sh"
 
-PROJECT="vino9-276317"
-ZONE="us-west1-b"
-MACHINE_TYPE=""
-CPUS=""
-MEMORY_GB=""
-FAMILY="e2"
+MACHINE="e2-standard-2"
 SNAPSHOT=""
-BOOT_DISK_SIZE_GB=""
-DRY_RUN=0
-VM_NAME="tracker"
-
-DISK_TYPE="pd-balanced"
-SERVICE_ACCOUNT="worker-vm@vino9-276317.iam.gserviceaccount.com"
-DEFAULT_MACHINE_TYPE="e2-standard-2"
-
-die() { echo "ERROR: $*" >&2; exit 1; }
-
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --machine-type) MACHINE_TYPE="$2"; shift 2 ;;
-    --cpus) CPUS="$2"; shift 2 ;;
-    --memory) MEMORY_GB="$2"; shift 2 ;;
-    --family) FAMILY="$2"; shift 2 ;;
+    --machine-type) MACHINE="$2"; shift 2 ;;
     --snapshot) SNAPSHOT="$2"; shift 2 ;;
-    --boot-size) BOOT_DISK_SIZE_GB="$2"; shift 2 ;;
-    --zone) ZONE="$2"; shift 2 ;;
-    --project) PROJECT="$2"; shift 2 ;;
-    --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
-    -*) die "unknown option $1" ;;
-    *) VM_NAME="$1"; shift ;;
+    *) die "usage: create_vm.sh [--machine-type TYPE] [--snapshot NAME]" ;;
   esac
 done
-BOOT_DISK="${VM_NAME}"
 
-# --- Machine type -----------------------------------------------------------
-if [[ -n "${CPUS}" || -n "${MEMORY_GB}" ]]; then
-  [[ -n "${MACHINE_TYPE}" ]] && die "--machine-type conflicts with --cpus/--memory"
-  [[ -n "${CPUS}" && -n "${MEMORY_GB}" ]] || die "--cpus and --memory go together"
-  MACHINE_ARGS=(--custom-vm-type="${FAMILY}" --custom-cpu="${CPUS}"
-                --custom-memory="${MEMORY_GB}GB")
-  MACHINE_DESC="custom ${FAMILY} ${CPUS} vCPU / ${MEMORY_GB} GB"
-else
-  MACHINE_TYPE="${MACHINE_TYPE:-${DEFAULT_MACHINE_TYPE}}"
-  gcloud compute machine-types describe "${MACHINE_TYPE}" \
-    --project="${PROJECT}" --zone="${ZONE}" --format="value(name)" \
-    >/dev/null 2>&1 || die "machine type ${MACHINE_TYPE} is not offered in ${ZONE}"
-  MACHINE_ARGS=(--machine-type="${MACHINE_TYPE}")
-  MACHINE_DESC="${MACHINE_TYPE}"
-fi
-
-# --- Snapshot ---------------------------------------------------------------
+[[ -z "$(vm_status)" ]] || die "instance ${VM} already exists"
 if [[ -z "${SNAPSHOT}" ]]; then
   SNAPSHOT="$(gcloud compute snapshots list --project="${PROJECT}" \
-    --filter="name~^tracker-base-[0-9]+$" --sort-by=~creationTimestamp \
-    --limit=1 --format="value(name)")"
-  [[ -n "${SNAPSHOT}" ]] || die "no snapshot named tracker-base-<yyyymmdd>; pass --snapshot"
-fi
-read -r SNAP_STATUS BOOT_SRC_GB < <(gcloud compute snapshots describe "${SNAPSHOT}" \
-  --project="${PROJECT}" --format="value(status,diskSizeGb)") \
-  || die "snapshot ${SNAPSHOT} not found in ${PROJECT}"
-[[ "${SNAP_STATUS}" == "READY" ]] || die "snapshot ${SNAPSHOT} is ${SNAP_STATUS}"
-BOOT_DISK_SIZE_GB="${BOOT_DISK_SIZE_GB:-${BOOT_SRC_GB}}"
-(( BOOT_DISK_SIZE_GB >= BOOT_SRC_GB )) \
-  || die "--boot-size ${BOOT_DISK_SIZE_GB} < snapshot source size ${BOOT_SRC_GB}"
-echo "   boot: ${SNAPSHOT} -> ${BOOT_DISK} (${BOOT_DISK_SIZE_GB} GB)"
-
-# --- Pre-flight: nothing may already exist ----------------------------------
-exists() {
-  gcloud compute "$1" describe "$2" --project="${PROJECT}" --zone="${ZONE}" \
-    --format="value(name)" >/dev/null 2>&1
-}
-exists instances "${VM_NAME}" && die "instance ${VM_NAME} already exists in ${ZONE}"
-exists disks "${BOOT_DISK}" && die "disk ${BOOT_DISK} already exists in ${ZONE}"
-
-echo ">> Plan: ${VM_NAME} in ${PROJECT}/${ZONE}, ${MACHINE_DESC}"
-if [[ "${DRY_RUN}" -eq 1 ]]; then
-  echo ">> Dry run: nothing created."
-  exit 0
+    --filter="name~^tracker-base-[0-9]+$ AND status=READY" \
+    --sort-by=~creationTimestamp --limit=1 --format='value(name)')"
+  [[ -n "${SNAPSHOT}" ]] || die "no READY snapshot named tracker-base-<yyyymmdd>"
 fi
 
-# --- Create -----------------------------------------------------------------
-# gcloud's long "wait for operation" request is sometimes dropped by a proxy
-# (ProxyError), failing the command although the resource is being created.
-# So each create is followed by wait_ready, which polls with short describe
-# calls and only gives up when the resource never appears.
-CREATE_FAILED=0
-wait_ready() {  # wait_ready <disks|instances> <name> <wanted status>
-  local i st missing=0
-  for i in $(seq 1 120); do
-    st="$(gcloud compute "$1" describe "$2" --project="${PROJECT}" --zone="${ZONE}" \
-      --format="value(status)" 2>/dev/null || true)"
-    if [[ "${st}" == "$3" ]]; then CREATE_FAILED=0; return 0; fi
-    if [[ -z "${st}" ]]; then
-      missing=$((missing + 1))
-      (( CREATE_FAILED == 1 && missing >= 3 )) && die "$1 $2 was not created"
-    fi
-    sleep 5
-  done
-  die "$1 $2 did not reach $3 (last status: ${st:-none})"
-}
+echo ">> Creating ${VM} (${MACHINE}) from ${SNAPSHOT}..."
+gcloud compute disks create "${VM}" "${GC[@]}" --source-snapshot="${SNAPSHOT}" \
+  --type=pd-balanced || echo ">> create reported an error; checking whether it went through..."
+poll 36 has_status disks "${VM}" READY || die "boot disk ${VM} did not become READY"
 
-echo ">> Creating boot disk ${BOOT_DISK}..."
-gcloud compute disks create "${BOOT_DISK}" \
-  --project="${PROJECT}" --zone="${ZONE}" \
-  --source-snapshot="${SNAPSHOT}" \
-  --size="${BOOT_DISK_SIZE_GB}" --type="${DISK_TYPE}" || CREATE_FAILED=1
-wait_ready disks "${BOOT_DISK}" READY
-DISK_ARGS=(--disk="name=${BOOT_DISK},boot=yes,auto-delete=yes,device-name=${VM_NAME}")
-
-echo ">> Creating instance ${VM_NAME}..."
-gcloud compute instances create "${VM_NAME}" \
-  --project="${PROJECT}" --zone="${ZONE}" \
-  "${MACHINE_ARGS[@]}" \
-  "${DISK_ARGS[@]}" \
+gcloud compute instances create "${VM}" "${GC[@]}" --machine-type="${MACHINE}" \
+  --disk="name=${VM},boot=yes,auto-delete=yes,device-name=${VM}" \
   --network-interface=network=default,subnet=default,network-tier=PREMIUM \
-  --service-account="${SERVICE_ACCOUNT}" \
-  --scopes=cloud-platform || CREATE_FAILED=1
-wait_ready instances "${VM_NAME}" RUNNING
+  --service-account="worker-vm@${PROJECT}.iam.gserviceaccount.com" \
+  --scopes=cloud-platform || echo ">> create reported an error; checking whether it went through..."
+poll 36 has_status instances "${VM}" RUNNING || die "instance ${VM} is not RUNNING"
 
-read -r STATUS IP < <(gcloud compute instances describe "${VM_NAME}" \
-  --project="${PROJECT}" --zone="${ZONE}" \
-  --format="value(status,networkInterfaces[0].accessConfigs[0].natIP)")
-echo ">> Done."
-echo "RESULT ${VM_NAME} ${STATUS} ${IP}"
+refresh_ssh
+echo ">> ${VM} is up: ssh ${VM}   (no scratch disk yet: add_scratch.sh)"

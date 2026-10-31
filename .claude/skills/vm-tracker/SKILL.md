@@ -1,184 +1,76 @@
 ---
 name: vm-tracker
 description: |
-  Manage the "tracker" GCE processing VM (Takeout/photo processing) across idle
-  periods. "create": build it from the newest `tracker-base-<yyyymmdd>` boot
-  snapshot (boot disk only), then point `tracker` in ~/.ssh/config at the new
-  public IP. "scratch add/remove/status": hot-add or delete a throwaway
-  /mnt/scratch disk on the running VM (never snapshotted). "stop": remove the
-  scratch disk, then stop the VM. "retire": snapshot the boot disk as a new
-  `tracker-base-<yyyymmdd>`, then delete the VM and its disks.
+  Manage the "tracker" GCE processing VM (Takeout/photo processing). "create":
+  build it from the newest `tracker-base-<yyyymmdd>` snapshot and point the
+  `tracker` ssh alias at it. "add scratch" / "delete scratch": attach or delete a
+  throwaway /mnt/scratch disk (never snapshotted). "retire": snapshot the boot disk
+  as a new `tracker-base-<yyyymmdd>`, then delete the VM.
   Creates and deletes billed cloud resources, so it is user-invoked only.
-  Usage: "vm-tracker [create|scratch|stop|retire] [options in words]"
-  Examples: "vm-tracker", "vm-tracker create 4 cpus 16GB",
-  "vm-tracker scratch add 200", "vm-tracker scratch remove", "vm-tracker stop",
-  "vm-tracker retire"
+  Usage: "vm-tracker [create|add scratch [GB]|delete scratch|retire]"
 disable-model-invocation: true
 ---
 
 # vm-tracker
 
-Scripts (in `.claude/skills/vm-tracker/`; `-h` lists all flags):
+Scripts in `.claude/skills/vm-tracker/`. All talk to project `vino9-276317`, zone
+`us-west1-b`, VM `tracker`, and print what they do.
 
-- `create_vm.sh`: provisions the boot disk and instance (no scratch disk).
-  Last stdout line on success: `RESULT <vm-name> <status> <ip>`.
-- `scratch_disk.sh add [GB] | remove [--yes] | status`: manages the scratch disk
-  of the running VM. Last line: `RESULT <vm-name> <disk> added|removed|present|none`.
-- `stop_vm.sh [--yes]`: `scratch_disk.sh remove --yes`, then stops the VM.
-- `retire_vm.sh`: snapshots the boot disk, then deletes the VM. Last line:
-  `RESULT <vm-name> deleted|kept <snapshot>`.
-- `update_ssh_config.py`: rewrites/adds the `HostName` of one `Host` block.
+| Script | What it does |
+|---|---|
+| `create_vm.sh [--machine-type T] [--snapshot S]` | Boot disk from the newest READY `tracker-base-*` snapshot, then the VM (default `e2-standard-2`, service account `worker-vm`, public IP), then `refresh_ssh`. No scratch disk. |
+| `add_scratch.sh [GB]` | Starts the VM if stopped, creates a `<vm>-scratch` disk (default 150 GB), attaches it, formats it if blank, writes the fixed fstab line once, mounts `/mnt/scratch`. |
+| `del_scratch.sh [--yes]` | Stops the VM, detaches and **deletes** the scratch disk. VM stays stopped. Without `--yes` it only prints the plan. |
+| `retire_vm.sh [--yes]` | Stops the VM, snapshots the boot disk as `tracker-base-<yyyymmdd>` (UTC), waits until READY, then deletes the VM and all its disks. Without `--yes` it only prints the plan. |
+| `lib.sh` | Shared helpers (constants, polling, `refresh_ssh`). Sourced, not run. |
+| `update_ssh_config.py` | Edits `HostName` in `~/.ssh/config`, or adds a block cloned from `station`. Called by `refresh_ssh`. |
 
-Defaults: project `vino9-276317`, zone `us-west1-b`, VM name `tracker`,
-machine `e2-standard-2` (2 vCPU / 8 GB), service account
-`worker-vm@vino9-276317.iam.gserviceaccount.com`, public IP (ephemeral).
-The boot snapshot is the newest `tracker-base-<yyyymmdd>` (Debian 12, 20 GB,
-UEFI, `aidev` user with sudo and its ssh key baked in).
+Boot snapshot = Debian 12, 20 GB, UEFI, `aidev` with sudo and its ssh key,
+`/mnt/vinolab` (gcsfuse) and `~/.config/rclone/rclone.conf` baked in; to change
+either, edit them on a VM and `retire` to make a new snapshot.
 
-**Scratch is separate from the VM.** `create` makes no scratch disk. A scratch
-disk is a blank `pd-balanced` disk `<vm>-scratch`, hot-attached with device name
-`scratch`, formatted ext4 and mounted at `/mnt/scratch` by `scratch_disk.sh add`,
-and **deleted** by `remove`. It is never snapshotted, so it costs money only while
-it exists. Stopped VMs still bill for attached disks: remove scratch before
-stopping (`stop` does both).
+The public IP is ephemeral: it changes on every stop/start. `create_vm.sh` and
+`add_scratch.sh` (when it starts a stopped VM) call `refresh_ssh`, which updates the
+ssh alias, drops stale `known_hosts` entries and waits for ssh.
 
-The action is `create` unless the user says scratch / stop / retire / shut down
-for a while / snapshot and delete / park.
+Because gcloud's long wait call is sometimes dropped by a proxy, every script runs
+the command, tolerates an error, and then polls the real end state. A message like
+"create reported an error; checking whether it went through..." is normal.
 
 ## Create
 
-### 2. Translate the rest of the request into flags
-
-| User says | Flags |
-|---|---|
-| a VM name | positional `VM_NAME` (default `tracker`) |
-| `e2-standard-4`, … | `--machine-type TYPE` |
-| "4 cpus 16GB" | `--cpus 4 --memory 16` (family `e2` unless they name one: `--family n2d`) |
-| a specific snapshot | `--snapshot NAME` (default: newest `tracker-base-*`) |
-| boot disk bigger | `--boot-size GB` (must be ≥ snapshot size, 20) |
-
-List snapshots with:
-`gcloud compute snapshots list --project=vino9-276317 --format="table(name,diskSizeGb,storageBytes.size(),creationTimestamp.date())"`
-
-### 3. Dry run and confirm
-
-```bash
-.claude/skills/vm-tracker/create_vm.sh --dry-run <flags> [VM_NAME]
-```
-
-Show the plan lines (snapshot, boot disk, machine) and get
-a go-ahead before creating anything. If the VM or a disk already exists, do
-**not** delete anything: tell the user and suggest another VM name.
-
-### 4. Create
-
-Re-run without `--dry-run` (timeout ≥ 5 min); take the IP from the `RESULT`
-line. If it fails part-way, list leftovers
-(`gcloud compute disks list --filter="name~^<VM_NAME>"`) and leave cleanup to
-the user.
-
-### 5. Update ~/.ssh/config
-
-The ssh alias is `tracker` (for another VM name use that name; ask if they want
-`tracker` repointed instead):
-
-```bash
-python3 -I .claude/skills/vm-tracker/update_ssh_config.py <alias> <ip> --template station
-```
-
-It edits `HostName` in place if the alias exists (backup at `~/.ssh/config.bak`);
-otherwise it appends a new block cloned from the existing `station` entry (same
-`User aidev`, host-key and keepalive options) with the new `HostName`. The new
-instance has new host keys and Google often reuses a freed IP, so clear stale
-entries:
-
-```bash
-ssh-keygen -R <alias>; ssh-keygen -R <old-ip>; ssh-keygen -R <new-ip>
-```
-
-### 6. Verify and report
-
-Wait for sshd (retry `ssh -o BatchMode=yes -o ConnectTimeout=8 <alias> true`
-for a couple of minutes; the first boot from a snapshot can be slow), then
-check `df -h /`, `mountpoint /mnt/vinolab` and `sudo -n true`. Report: VM name, machine,
-snapshot used, public IP, and the ssh
-config change. The snapshot's fstab mounts bucket `vinolab` at `/mnt/vinolab` (gcsfuse,
-`worker-vm` has `storage.objectUser` on it); if `systemctl is-system-running` says
-`degraded`, check `systemctl --failed` and report it. The snapshot does not
-refresh `~/.config/rclone/rclone.conf`; that file is baked into the snapshot
-(edit it on a VM and re-snapshot to change it). Say that there is no scratch
-disk yet (`vm-tracker scratch add`, default 150 GB; `takeout-fetch` needs it).
-Remind the user the VM bills until stopped or retired.
+Run `create_vm.sh`. If the user asks for a different size, pass `--machine-type`
+(`gcloud compute machine-types list --zones=us-west1-b`). It refuses if the VM
+already exists; do not delete anything, tell the user. Then report the IP, check
+`sudo -n true`, `mountpoint /mnt/vinolab` and `systemctl is-system-running`, and
+say there is **no scratch disk yet** (`takeout-fetch` needs one). Remind them the
+VM bills until stopped or retired.
 
 ## Scratch disk
 
-`/mnt/scratch` holds fetched Takeout zips and extracted batches. Ask the user how
-big whenever one is being added, with **150 GB** as the default (AskUserQuestion,
-150 GB first), unless they already said a size.
+`/mnt/scratch` holds fetched Takeout zips and extracted batches. When adding one,
+ask how big (AskUserQuestion, **150 GB** first/default) unless they gave a size.
 
-```bash
-.claude/skills/vm-tracker/scratch_disk.sh status
-.claude/skills/vm-tracker/scratch_disk.sh add [GB] [--dry-run]
-.claude/skills/vm-tracker/scratch_disk.sh remove            # shows what would go
-.claude/skills/vm-tracker/scratch_disk.sh remove --yes      # unmount, detach, DELETE
-```
-
-- `add` needs the VM RUNNING and `ssh tracker` working. It creates the disk,
-  attaches it, formats it (only if blank) and mounts it with mode 1777. It writes
-  one fixed line to the VM's `/etc/fstab`
-  (`/dev/disk/by-id/google-scratch /mnt/scratch ext4 defaults,nofail,...`), which
-  is never removed: the device path is the same for every scratch disk and
-  `nofail` makes a boot without one harmless.
-- `remove` without `--yes` only prints the usage and top-level contents. Show that
-  to the user, say that **everything on the disk is lost and cannot be recovered
-  (no snapshot)**, and get an explicit go-ahead before `--yes`. It refuses, and
-  changes nothing, if `/mnt/scratch` is busy (a shell `cd`'d in, a running
-  `takeout-fetch`); tell the user what to stop.
-- Only one scratch disk per VM. `add` refuses if one is attached.
-
-## Stop
-
-Use when the user is done for now but wants to keep the VM (cheaper than leaving
-it running; boot disk still bills, scratch must not).
-
-```bash
-.claude/skills/vm-tracker/stop_vm.sh [--vm NAME]          # plan only
-.claude/skills/vm-tracker/stop_vm.sh [--vm NAME] --yes
-```
-
-Show the plan (it includes the scratch disk contents that will be lost), get a
-go-ahead, then run with `--yes`. Afterwards say the public IP is released: on the
-next `gcloud compute instances start` the IP changes, so re-run
-`update_ssh_config.py` and clear `known_hosts` as in Create step 5.
+- `add_scratch.sh [GB]`. One scratch disk per VM.
+- `del_scratch.sh` first **without** `--yes`; show the plan and say that
+  **everything on the disk is lost and cannot be recovered**, and that the VM will
+  be stopped (anything running on it, such as a `takeout-fetch`, is killed). Run
+  with `--yes` only after an explicit go-ahead.
+- To stop paying for scratch overnight: `del_scratch.sh --yes` already leaves the
+  VM stopped. A stopped VM still bills for its boot disk, not for CPU.
+- Resizing = delete then add.
 
 ## Retire
 
-Use when the VM will sit idle: snapshots cost far less than a VM plus disks.
+For when the VM will sit idle and you want to pay only for snapshot storage.
+Run `retire_vm.sh` without `--yes`, show the plan, state that the VM and **every
+disk including an attached scratch disk will be deleted** (only the boot disk is
+snapshotted), and get an explicit go-ahead. It refuses if today's
+`tracker-base-<yyyymmdd>` already exists. Running it on the VM being retired kills
+your session; run it from your laptop.
 
-### 1. Dry run and confirm
-
-```bash
-.claude/skills/vm-tracker/retire_vm.sh --dry-run [VM_NAME]
-```
-
-Options: `--no-stop`, `--keep-vm`. It fails if today's
-`tracker-base-<yyyymmdd>` already exists. Show the plan and state clearly that
-the VM **and every disk, including any attached scratch disk, will be deleted
-and only the boot disk is snapshotted**. Get an explicit go-ahead, and suggest the
-user copy anything wanted out of `/mnt/scratch` first.
-
-Running on the VM being retired: the script snapshots without stopping and
-this session dies when the VM is deleted; recommend running from elsewhere.
-
-### 2. Retire
-
-Re-run without `--dry-run` (timeout 10 min). The VM is deleted only after the
-snapshot is `READY`.
-
-### 3. Report
-
-Snapshot name and size (`gcloud compute snapshots describe NAME
---format="value(storageBytes)"`; sizes are incremental after the first), that
-the VM and disks are gone, and the restore command (`vm-tracker create`, which
-picks the newest snapshot). Older `tracker-base-*` snapshots still cost
-storage; list them and leave deleting to the user.
+Afterwards report the snapshot name and size
+(`gcloud compute snapshots describe NAME --format="value(storageBytes)"`; the
+first snapshot of a disk is full, later ones incremental, and the field can read 0
+for a while). Older `tracker-base-*` snapshots still cost storage: list them, leave
+deleting to the user.
