@@ -29,6 +29,11 @@ INDEX="takeout-$TS-001.zip"
 ZIPS=${ZIPS:-$SCRATCH/zips/$TS}
 OUT=${OUT:-/mnt/scratch/takeout/$TS}
 WORK=$SCRATCH/.fetch-$TS
+case $SCRATCH$ZIPS$OUT in
+    */mnt/scratch*|/mnt/scratch*)
+        mountpoint -q /mnt/scratch \
+            || { echo "ABORT: /mnt/scratch is not mounted; run: vm-tracker scratch add" >&2; exit 1; } ;;
+esac
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT  # listing/catalog/index copies; re-fetched on every run
 log() { echo "[$(date +%H:%M:%S)] $*"; }

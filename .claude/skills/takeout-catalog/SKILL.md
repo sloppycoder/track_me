@@ -52,7 +52,10 @@ It may not exist yet; create it
 with the header below. Always pull, edit, push:
 
 ```bash
-SCRATCH=${SCRATCH:-/mnt/scratch/tmp}; mkdir -p "$SCRATCH"
+# /mnt/scratch exists only while a scratch disk is attached; the catalog needs
+# just a few MB, so fall back to the home directory.
+if mountpoint -q /mnt/scratch; then D=/mnt/scratch/tmp; else D=$HOME/scratch/takeout; fi
+SCRATCH=${SCRATCH:-$D}; mkdir -p "$SCRATCH"
 rclone copyto gdrive:CATALOG.md "$SCRATCH/CATALOG.md" 2>/dev/null || true
 # ...edit...
 rclone copyto "$SCRATCH/CATALOG.md" gdrive:CATALOG.md

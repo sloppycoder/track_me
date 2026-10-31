@@ -3,13 +3,16 @@ name: vm-tracker
 description: |
   Manage the "tracker" GCE processing VM (Takeout/photo processing) across idle
   periods. "create": build it from the newest `tracker-base-<yyyymmdd>` boot
-  snapshot (asks about a scratch disk, default 150 GB), then point `tracker`
-  in ~/.ssh/config at the new public IP. "retire": snapshot the boot disk as a
-  new `tracker-base-<yyyymmdd>`, then delete the VM and its disks.
+  snapshot (boot disk only), then point `tracker` in ~/.ssh/config at the new
+  public IP. "scratch add/remove/status": hot-add or delete a throwaway
+  /mnt/scratch disk on the running VM (never snapshotted). "stop": remove the
+  scratch disk, then stop the VM. "retire": snapshot the boot disk as a new
+  `tracker-base-<yyyymmdd>`, then delete the VM and its disks.
   Creates and deletes billed cloud resources, so it is user-invoked only.
-  Usage: "vm-tracker [create|retire] [VM_NAME] [options in words]"
+  Usage: "vm-tracker [create|scratch|stop|retire] [options in words]"
   Examples: "vm-tracker", "vm-tracker create 4 cpus 16GB",
-  "vm-tracker create no scratch", "vm-tracker retire"
+  "vm-tracker scratch add 200", "vm-tracker scratch remove", "vm-tracker stop",
+  "vm-tracker retire"
 disable-model-invocation: true
 ---
 
@@ -17,8 +20,11 @@ disable-model-invocation: true
 
 Scripts (in `.claude/skills/vm-tracker/`; `-h` lists all flags):
 
-- `create_vm.sh`: provisions boot disk, optional scratch disk and instance.
+- `create_vm.sh`: provisions the boot disk and instance (no scratch disk).
   Last stdout line on success: `RESULT <vm-name> <status> <ip>`.
+- `scratch_disk.sh add [GB] | remove [--yes] | status`: manages the scratch disk
+  of the running VM. Last line: `RESULT <vm-name> <disk> added|removed|present|none`.
+- `stop_vm.sh [--yes]`: `scratch_disk.sh remove --yes`, then stops the VM.
 - `retire_vm.sh`: snapshots the boot disk, then deletes the VM. Last line:
   `RESULT <vm-name> deleted|kept <snapshot>`.
 - `update_ssh_config.py`: rewrites/adds the `HostName` of one `Host` block.
@@ -27,22 +33,19 @@ Defaults: project `vino9-276317`, zone `us-west1-b`, VM name `tracker`,
 machine `e2-standard-2` (2 vCPU / 8 GB), service account
 `worker-vm@vino9-276317.iam.gserviceaccount.com`, public IP (ephemeral).
 The boot snapshot is the newest `tracker-base-<yyyymmdd>` (Debian 12, 20 GB,
-UEFI, `aidev` user with sudo and its ssh key baked in). Scratch is a blank
-`pd-balanced` disk `<vm>-scratch` that a startup script formats (first boot
-only) and mounts at `/mnt/scratch`; it is deleted with the VM.
+UEFI, `aidev` user with sudo and its ssh key baked in).
 
-The action is `create` unless the user says retire / shut down for a while /
-snapshot and delete / park.
+**Scratch is separate from the VM.** `create` makes no scratch disk. A scratch
+disk is a blank `pd-balanced` disk `<vm>-scratch`, hot-attached with device name
+`scratch`, formatted ext4 and mounted at `/mnt/scratch` by `scratch_disk.sh add`,
+and **deleted** by `remove`. It is never snapshotted, so it costs money only while
+it exists. Stopped VMs still bill for attached disks: remove scratch before
+stopping (`stop` does both).
+
+The action is `create` unless the user says scratch / stop / retire / shut down
+for a while / snapshot and delete / park.
 
 ## Create
-
-### 1. Ask about the scratch disk (every time)
-
-Whenever a new VM is being provisioned, ask the user whether a scratch disk is
-needed and how big, with **yes, 150 GB** as the default (use AskUserQuestion
-with that as the recommended first option, plus options such as 300 GB and
-none). Skip the question only if the request already states it ("no scratch",
-"500G scratch"). Map to `--scratch-size GB` or `--no-scratch`.
 
 ### 2. Translate the rest of the request into flags
 
@@ -63,7 +66,7 @@ List snapshots with:
 .claude/skills/vm-tracker/create_vm.sh --dry-run <flags> [VM_NAME]
 ```
 
-Show the plan lines (snapshot, boot and scratch disks, machine) and get
+Show the plan lines (snapshot, boot disk, machine) and get
 a go-ahead before creating anything. If the VM or a disk already exists, do
 **not** delete anything: tell the user and suggest another VM name.
 
@@ -97,13 +100,56 @@ ssh-keygen -R <alias>; ssh-keygen -R <old-ip>; ssh-keygen -R <new-ip>
 
 Wait for sshd (retry `ssh -o BatchMode=yes -o ConnectTimeout=8 <alias> true`
 for a couple of minutes; the first boot from a snapshot can be slow), then
-check `df -h / /mnt/scratch`, `mountpoint /mnt/vinolab` and `sudo -n true`. Report: VM name, machine,
-snapshot used, disks (with scratch size), public IP, and the ssh
+check `df -h /`, `mountpoint /mnt/vinolab` and `sudo -n true`. Report: VM name, machine,
+snapshot used, public IP, and the ssh
 config change. The snapshot's fstab mounts bucket `vinolab` at `/mnt/vinolab` (gcsfuse,
 `worker-vm` has `storage.objectUser` on it); if `systemctl is-system-running` says
 `degraded`, check `systemctl --failed` and report it. The snapshot does not
 refresh `~/.config/rclone/rclone.conf`; that file is baked into the snapshot
-(edit it on a VM and re-snapshot to change it). Remind the user the VM bills until stopped or retired.
+(edit it on a VM and re-snapshot to change it). Say that there is no scratch
+disk yet (`vm-tracker scratch add`, default 150 GB; `takeout-fetch` needs it).
+Remind the user the VM bills until stopped or retired.
+
+## Scratch disk
+
+`/mnt/scratch` holds fetched Takeout zips and extracted batches. Ask the user how
+big whenever one is being added, with **150 GB** as the default (AskUserQuestion,
+150 GB first), unless they already said a size.
+
+```bash
+.claude/skills/vm-tracker/scratch_disk.sh status
+.claude/skills/vm-tracker/scratch_disk.sh add [GB] [--dry-run]
+.claude/skills/vm-tracker/scratch_disk.sh remove            # shows what would go
+.claude/skills/vm-tracker/scratch_disk.sh remove --yes      # unmount, detach, DELETE
+```
+
+- `add` needs the VM RUNNING and `ssh tracker` working. It creates the disk,
+  attaches it, formats it (only if blank) and mounts it with mode 1777. It writes
+  one fixed line to the VM's `/etc/fstab`
+  (`/dev/disk/by-id/google-scratch /mnt/scratch ext4 defaults,nofail,...`), which
+  is never removed: the device path is the same for every scratch disk and
+  `nofail` makes a boot without one harmless.
+- `remove` without `--yes` only prints the usage and top-level contents. Show that
+  to the user, say that **everything on the disk is lost and cannot be recovered
+  (no snapshot)**, and get an explicit go-ahead before `--yes`. It refuses, and
+  changes nothing, if `/mnt/scratch` is busy (a shell `cd`'d in, a running
+  `takeout-fetch`); tell the user what to stop.
+- Only one scratch disk per VM. `add` refuses if one is attached.
+
+## Stop
+
+Use when the user is done for now but wants to keep the VM (cheaper than leaving
+it running; boot disk still bills, scratch must not).
+
+```bash
+.claude/skills/vm-tracker/stop_vm.sh [--vm NAME]          # plan only
+.claude/skills/vm-tracker/stop_vm.sh [--vm NAME] --yes
+```
+
+Show the plan (it includes the scratch disk contents that will be lost), get a
+go-ahead, then run with `--yes`. Afterwards say the public IP is released: on the
+next `gcloud compute instances start` the IP changes, so re-run
+`update_ssh_config.py` and clear `known_hosts` as in Create step 5.
 
 ## Retire
 
@@ -117,9 +163,9 @@ Use when the VM will sit idle: snapshots cost far less than a VM plus disks.
 
 Options: `--no-stop`, `--keep-vm`. It fails if today's
 `tracker-base-<yyyymmdd>` already exists. Show the plan and state clearly that
-the VM **and every disk, including the scratch disk, will be deleted and only
-the boot disk is snapshotted**. Get an explicit go-ahead, and suggest the user
-copy anything wanted out of `/mnt/scratch` first.
+the VM **and every disk, including any attached scratch disk, will be deleted
+and only the boot disk is snapshotted**. Get an explicit go-ahead, and suggest the
+user copy anything wanted out of `/mnt/scratch` first.
 
 Running on the VM being retired: the script snapshots without stopping and
 this session dies when the VM is deleted; recommend running from elsewhere.

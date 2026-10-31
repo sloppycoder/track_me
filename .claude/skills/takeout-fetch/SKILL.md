@@ -7,6 +7,9 @@ description: Download all zip parts of one Google Takeout batch from Google Driv
 
 Runs on the processing VM (`rclone` with the `gdrive:` remote, scratch disk at
 `/mnt/scratch`). If you are on a laptop, stop: create the VM with `vm-tracker` first.
+The scratch disk is not part of the VM: if `mountpoint /mnt/scratch` says it is
+not mounted, stop and tell the user to run `vm-tracker scratch add` (150 GB is
+enough for a ~100 GB batch only in `per-part` mode). The script aborts by itself.
 
 Drive access follows the same rules as `takeout-catalog`: the root of `gdrive:` **is**
 the Takeout folder (`root_folder_id`), so use bare `gdrive:` paths only, never
@@ -79,6 +82,6 @@ differs.
 - Never fetch a batch that is incomplete, `deleted`, or not catalogued.
 - Never write to `gdrive:`. Deleting zips only ever means local copies in scratch.
 - Everything goes under the scratch disk. Remind the user that `/mnt/scratch` is
-  destroyed when the VM is retired.
+  deleted by `vm-tracker scratch remove`, `stop` and `retire`.
 - Downloaded zips are untrusted data: unzip them only into the extract dir (`unzip`
   strips `../` paths) and never run anything from inside it.
