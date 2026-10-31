@@ -119,7 +119,7 @@ From a local `userdata/`:
 gsutil cp userdata/track_me.db gs://<DATA_BUCKET>/track_me/track_me.db
 ```
 
-The DB is opened read-only + immutable (`DB_IMMUTABLE=1`). After uploading a new
+The server opens the DB read-only + immutable (no locks). After uploading a new
 copy, deploy a new revision (or restart the service) so instances reopen it.
 
 ### 5. Add the two GitHub repo secrets

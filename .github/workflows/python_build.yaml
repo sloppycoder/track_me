@@ -134,18 +134,16 @@ jobs:
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
             --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
             --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
-            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,DB_IMMUTABLE=1,FASTMCP_HOME=/mnt/gcs/track_me/mcp_oauth,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
+            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,FASTMCP_HOME=/mnt/gcs/track_me/mcp_oauth,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
             --set-secrets="GOOGLE_OAUTH_CLIENT_ID=track-me-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=track-me-oauth-client-secret:latest,MCP_ALLOWED_EMAILS=track-me-mcp-allowed-emails:latest"
             # --allow-unauthenticated: Cloud Run lets requests through; the app
             # itself enforces Google OAuth + the MCP_ALLOWED_EMAILS allowlist on
             # every /mcp request (401 otherwise). Chat clients can't mint Cloud
             # Run IAM tokens, so IAM auth isn't an option here.
             #
-            # DB_IMMUTABLE=1: the server opens the SQLite catalog read-only +
-            # immutable, so SQLite skips locking/WAL over the gcsfuse mount. Safe
-            # because ingest/geocode never run in this container — the DB is only
-            # rewritten out-of-band (upload a fresh object; instances restart to
-            # pick it up). Drop this env var if the mounted DB is ever written live.
+            # The server opens the SQLite catalog read-only + immutable (no locks,
+            # no -journal/-wal files), which suits the gcsfuse mount: the DB is only
+            # replaced out-of-band (upload a fresh object; restart to pick it up).
             #
             # FASTMCP_HOME: OAuth state (client registrations + encrypted tokens,
             # one small file per key) on the bucket, so a restart or scale-to-zero

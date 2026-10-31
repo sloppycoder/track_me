@@ -99,10 +99,38 @@ Results carry each photo's Google Photos link (opens the app on Android) and a
 Google Maps link. No images are returned.
 
 ```shell
+track-me mcp --stdio              # local MCP client over stdio, no sign-in
 track-me mcp --no-auth            # local test: http://127.0.0.1:8080/mcp, no sign-in
-track-me mcp --stdio              # stdio transport for a local MCP client
 track-me mcp                      # HTTP + Google OAuth (what Cloud Run runs)
 ```
+
+The catalog is read from `./userdata/track_me.db` relative to the working
+directory (override with `TRACKME_USERDATA` or `DB_PATH`). The server opens it
+**read-only and immutable** — it takes no SQLite locks, so `ingest`/`geocode` can
+run against the same file while it's up.
+
+### Local use over stdio (no auth)
+
+A desktop MCP client (Claude Desktop, Claude Code, Gemini CLI, Cursor …) can launch
+the server itself. The client starts it as a subprocess on your machine, so there's
+no network listener and no sign-in. `uv --directory` makes the repo the working
+directory, so the default `./userdata` resolves:
+
+```json
+{
+  "mcpServers": {
+    "track_me": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/track_me", "run", "track-me", "mcp", "--stdio"]
+    }
+  }
+}
+```
+
+With Claude Code: `claude mcp add track_me -- uv --directory /path/to/track_me run
+track-me mcp --stdio`.
+
+### Remote use over HTTP (Google OAuth)
 
 Over HTTP (without `--no-auth`) the server requires **Google sign-in** and only
 admits the verified emails in `MCP_ALLOWED_EMAILS`. It needs `MCP_BASE_URL`,

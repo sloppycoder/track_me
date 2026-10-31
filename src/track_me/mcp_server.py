@@ -12,7 +12,11 @@ emails in ``MCP_ALLOWED_EMAILS`` get through — see :class:`AllowlistGoogleProv
 Run:
     track-me mcp                  # HTTP on 127.0.0.1:8080/mcp, Google OAuth
     track-me mcp --no-auth        # local testing only (loopback host required)
-    track-me mcp --stdio          # stdio transport for local MCP clients
+    track-me mcp --stdio          # local MCP clients over stdio; no auth needed
+
+Over stdio the client launches the server as a subprocess on the user's own
+machine, so there is no network listener to protect. The catalog is read from
+``config.DB_PATH`` (default ``./userdata/track_me.db``, relative to the CWD).
 """
 
 from __future__ import annotations
@@ -323,7 +327,22 @@ _READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 
 
 def _open_db() -> Database:
-    return Database.read_only(config.DB_PATH, immutable=config.DB_IMMUTABLE)
+    """A fresh read-only, immutable connection to the catalog.
+
+    Immutable means SQLite takes no locks at all (and never creates -journal/-wal
+    files), so the server can never block an ingest/geocode writing the same file,
+    nor be blocked by one. A query that overlaps a commit could see a half-written
+    state — the server never writes, so the file is never harmed, and the next
+    call (a new connection) sees the committed data."""
+    return Database.read_only(config.DB_PATH, immutable=True)
+
+
+def _require_db() -> None:
+    if not config.DB_PATH.is_file():
+        raise SystemExit(
+            f"catalog not found at {config.DB_PATH} — run from the directory holding "
+            "userdata/, or set TRACKME_USERDATA / DB_PATH"
+        )
 
 
 def create_server(auth: GoogleProvider | None = None) -> FastMCP:
@@ -436,6 +455,7 @@ def create_server(auth: GoogleProvider | None = None) -> FastMCP:
 
 def run(*, host: str, port: int, no_auth: bool = False, stdio: bool = False) -> None:
     """Serve over stdio (local clients) or streamable HTTP at ``/mcp``."""
+    _require_db()
     if stdio:
         create_server().run(transport="stdio", show_banner=False)
         return

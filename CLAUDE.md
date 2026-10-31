@@ -146,6 +146,11 @@ catalog_summary`; `get_trips` reuses `timeline.build_stays`. Results are capped
 and sampled to stay small, and carry `google_photos_url` + a Google Maps link —
 no images.
 
+Locally, `track-me mcp --stdio` serves a desktop client with no auth, reading
+`./userdata` by default. Every call opens a fresh **read-only, immutable**
+connection (`mcp_server._open_db`) — no SQLite locks, so it never blocks or is
+blocked by ingest/geocode.
+
 Over HTTP it requires **Google OAuth** (FastMCP's OAuth proxy) and
 `AllowlistGoogleProvider` rejects any token whose verified email is not in
 `MCP_ALLOWED_EMAILS` — keep it fail-closed. `--no-auth` is refused off loopback.

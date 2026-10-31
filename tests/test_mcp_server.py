@@ -1,11 +1,15 @@
 """Tests for the MCP server's read-only catalog tools and its email allowlist."""
 
 import asyncio
+import os
+import sqlite3
+import sys
 from datetime import datetime
 from datetime import timezone as dt_timezone
 
 import pytest
 from fastmcp import Client
+from fastmcp.client.transports import StdioTransport
 from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.auth.providers.google import GoogleProvider
 
@@ -158,9 +162,59 @@ def test_server_lists_and_calls_tools(trip, monkeypatch):
     assert result.structured_content["groups"][0]["city"] == "Tokyo"
 
 
-def test_run_refuses_no_auth_off_loopback():
+def test_run_refuses_no_auth_off_loopback(trip, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", trip.path)
     with pytest.raises(SystemExit, match="loopback"):
         ms.run(host="0.0.0.0", port=8080, no_auth=True)
+
+
+def test_run_requires_existing_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "missing.db")
+    with pytest.raises(SystemExit, match="catalog not found"):
+        ms.run(host="127.0.0.1", port=8080, stdio=True)
+
+
+def test_open_db_is_read_only_and_lock_free(trip, monkeypatch):
+    monkeypatch.setattr(config, "DB_PATH", trip.path)
+    with ms._open_db() as db:
+        assert db.count_media() == 7
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            db.conn.execute("DELETE FROM media")
+        # Immutable: no lock is taken, so a writer can commit even while one of
+        # our queries is mid-read (a plain mode=ro reader would hold SHARED and
+        # the commit would fail with "database is locked").
+        cur = db.conn.execute("SELECT id FROM media")
+        cur.fetchone()
+        trip.conn.execute("UPDATE media SET needs_review = 1")
+        trip.conn.commit()
+        cur.close()
+    assert not trip.path.with_name(trip.path.name + "-journal").exists()
+
+
+def test_stdio_session_reads_cwd_userdata(trip, tmp_path):
+    """End to end: a client launches `track-me mcp --stdio` from a directory
+    holding userdata/track_me.db (the default location) and calls a tool."""
+    workdir = tmp_path / "work"
+    (workdir / "userdata").mkdir(parents=True)
+    trip.conn.execute("VACUUM INTO ?", (str(workdir / "userdata" / "track_me.db"),))
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"DB_PATH", "TRACKME_USERDATA", "USERDATA_DIR"}
+    }
+    transport = StdioTransport(
+        command=sys.executable,
+        args=["-m", "track_me.cli", "mcp", "--stdio"],
+        env=env,
+        cwd=str(workdir),
+    )
+
+    async def go():
+        async with Client(transport) as client:
+            return await client.call_tool("catalog_overview", {})
+
+    result = asyncio.run(go())
+    assert result.structured_content["total"] == 7
 
 
 def test_build_auth_requires_config(monkeypatch):
