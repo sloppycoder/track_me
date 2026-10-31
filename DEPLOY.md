@@ -16,9 +16,10 @@ tokens.
 Runtime state (the SQLite DB) is **not** baked into the image — at startup the app
 copies `gs://<DATA_BUCKET>/track_me/track_me.db` to `/tmp` (set via
 `TRACKME_DB_URI`; the service account needs read access to the bucket) and serves
-from the copy. `/tmp` is in-memory on Cloud Run, so the container has 1 GiB. No
-bucket is mounted: OAuth state (`FASTMCP_HOME`) is on ephemeral disk, so after a
-restart or scale-to-zero chat clients sign in again.
+from the copy. `/tmp` is in-memory on Cloud Run, so the container has 1 GiB. The
+bucket is still mounted at `/mnt/gcs`, but only for OAuth state: `FASTMCP_HOME`
+(client registrations + encrypted tokens) lives there so scale-to-zero doesn't sign
+chat clients out. Queries never touch the mount.
 
 Deploy auth is keyless via **Workload Identity Federation** — no service-account
 keys in GitHub.

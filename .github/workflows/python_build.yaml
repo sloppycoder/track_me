@@ -20,7 +20,7 @@ env:
   GCP_REGION: us-west1 # "oregon"
   SERVICE_NAME: track-me
   AR_REPO: track-me # Artifact Registry repo (Docker format) in GCP_REGION
-  GCS_BUCKET: vinolab # holds track_me/track_me.db, copied to /tmp at cold start
+  GCS_BUCKET: vinolab # track_me/track_me.db (copied to /tmp at cold start) + OAuth state
 
 jobs:
   pytest:
@@ -132,5 +132,7 @@ jobs:
             --timeout=60s \
             --allow-unauthenticated \
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
-            --set-env-vars="TRACKME_DB_URI=gs://${GCS_BUCKET}/track_me/track_me.db,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
+            --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
+            --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
+            --set-env-vars="TRACKME_DB_URI=gs://${GCS_BUCKET}/track_me/track_me.db,FASTMCP_HOME=/mnt/gcs/track_me/mcp_oauth,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
             --set-secrets="GOOGLE_OAUTH_CLIENT_ID=my-mcp-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=my-mcp-oauth-client-secret:latest,MCP_ALLOWED_EMAILS=track-me-mcp-allowed-emails:latest"

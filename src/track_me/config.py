@@ -41,8 +41,8 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 # the comma-separated MCP_ALLOWED_EMAILS may connect. MCP_JWT_SIGNING_KEY signs
 # the tokens the server hands to clients; unset, FastMCP derives it from the
 # client secret. OAuth state (client registrations, tokens) lives under
-# FASTMCP_HOME — on persistent storage it survives restarts; on ephemeral disk
-# (Cloud Run without a volume) clients must sign in again after a restart.
+# FASTMCP_HOME — on Cloud Run it points at the mounted bucket so scale-to-zero keeps
+# clients signed in; on ephemeral disk clients must sign in again after a restart.
 #
 # TRACKME_DB_URI (gs://bucket/key): at startup `track-me mcp` copies the catalog
 # there to TRACKME_DB_LOCAL (default /tmp/track_me.db — in-memory on Cloud Run) and
