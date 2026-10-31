@@ -131,8 +131,6 @@ jobs:
             --max-instances=1 \
             --timeout=60s \
             --allow-unauthenticated \
-            --remove-volume-mount=/mnt/gcs \
-            --remove-volume=userdata \
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
             --set-env-vars="TRACKME_DB_URI=gs://${GCS_BUCKET}/track_me/track_me.db,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
             --set-secrets="GOOGLE_OAUTH_CLIENT_ID=my-mcp-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=my-mcp-oauth-client-secret:latest,MCP_ALLOWED_EMAILS=track-me-mcp-allowed-emails:latest"
