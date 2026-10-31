@@ -455,6 +455,73 @@ class Database:
         sql += "ORDER BY m.taken_at"
         return [dict(r) for r in self.conn.execute(sql, params)]
 
+    # --- query (MCP server; read-only) ----------------------------------
+    def search_located(
+        self,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        country: str | None = None,
+        city: str | None = None,
+    ) -> list[dict]:
+        """Located photos joined to their place, ordered by time.
+
+        ``start_date``/``end_date`` are inclusive ``YYYY-MM-DD`` bounds on the
+        photo's LOCAL day (``local_date``). ``country`` is an ISO-2 code. ``city``
+        matches ``place.city`` or ``place.admin1`` case-insensitively (admin1 is
+        the city label for metros such as Tokyo — see timeline.METRO_AS_CITY)."""
+        sql = (
+            "SELECT m.id, m.file_name, m.kind, m.taken_at, m.local_date, m.timezone, "
+            "m.latitude, m.longitude, m.google_photos_url, "
+            "p.city, p.admin1, p.country_code, p.formatted_address "
+            "FROM media m LEFT JOIN place p ON m.geo_cell = p.h3_cell "
+            "WHERE m.latitude IS NOT NULL AND m.taken_at IS NOT NULL "
+        )
+        params: list = []
+        if start_date:
+            sql += "AND m.local_date >= ? "
+            params.append(start_date)
+        if end_date:
+            sql += "AND m.local_date <= ? "
+            params.append(end_date)
+        if country:
+            sql += "AND p.country_code = ? "
+            params.append(country.upper())
+        if city:
+            sql += "AND (p.city = ? COLLATE NOCASE OR p.admin1 = ? COLLATE NOCASE) "
+            params.extend([city, city])
+        sql += "ORDER BY m.taken_at"
+        return [dict(r) for r in self.conn.execute(sql, params)]
+
+    def search_places(self, text: str, limit: int = 25) -> list[dict]:
+        """Place names (city/admin1/address) containing ``text``, with the photo
+        count and local-date span of each (city, admin1, country) group."""
+        like = f"%{text}%"
+        sql = (
+            "SELECT p.city, p.admin1, p.country_code, COUNT(m.id) AS photo_count, "
+            "MIN(m.local_date) AS first_date, MAX(m.local_date) AS last_date "
+            "FROM place p JOIN media m ON m.geo_cell = p.h3_cell "
+            "WHERE p.city LIKE ? OR p.admin1 LIKE ? OR p.formatted_address LIKE ? "
+            "GROUP BY p.city, p.admin1, p.country_code "
+            "ORDER BY photo_count DESC LIMIT ?"
+        )
+        return [dict(r) for r in self.conn.execute(sql, (like, like, like, limit))]
+
+    def catalog_summary(self) -> dict:
+        """Overall counts, the local-date span, and photo counts per country."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS total, COUNT(latitude) AS located, "
+            "MIN(local_date) AS first_date, MAX(local_date) AS last_date FROM media"
+        ).fetchone()
+        countries = self.conn.execute(
+            "SELECT p.country_code, COUNT(*) AS photo_count, "
+            "MIN(m.local_date) AS first_date, MAX(m.local_date) AS last_date "
+            "FROM media m JOIN place p ON m.geo_cell = p.h3_cell "
+            "WHERE p.country_code IS NOT NULL "
+            "GROUP BY p.country_code ORDER BY photo_count DESC"
+        ).fetchall()
+        return {**dict(row), "countries": [dict(r) for r in countries]}
+
 
 # guard against dataclass/columns drift
 assert {f.name for f in fields(Media)} == set(_MEDIA_COLUMNS) | {"id"}

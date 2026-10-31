@@ -20,6 +20,7 @@ src/track_me/
   thumbnails.py  # opt-in thumbnail cache
   tz.py          # offline timezone lookup
   viewer/        # Flask app + templates (renders timelines on Google Maps)
+  mcp_server.py  # MCP server: read-only catalog tools for chat clients (Google OAuth)
 ```
 
 ## Key Dependencies
@@ -70,8 +71,8 @@ local — the DB, `thumbnails/`, `timelines/` — lives under `userdata/` (gitig
 ## CLI: `track-me`
 
 Single entrypoint (installed console script; also `uv run track-me ...`), source in
-`src/track_me/cli.py`. Five subcommands: `ingest · geocode · export · timeline ·
-serve`. **The full command + flag reference lives in `README.md`** — don't
+`src/track_me/cli.py`. Six subcommands: `ingest · geocode · export · timeline ·
+serve · mcp`. **The full command + flag reference lives in `README.md`** — don't
 duplicate it here (it drifts). Below is the behavior agents should know.
 
 Ingest and geocode are re-runnable/incremental (dedupe by `Media.dedupe_key`;
@@ -121,8 +122,9 @@ once per distinct visit) → `userdata/timelines/<id>.json`, rendered by the vie
 ## Viewer
 
 `src/track_me/viewer/app.py` (Flask) lists `userdata/timelines/*.json` and renders one on the
-Google Maps JS API, injecting `GOOGLE_MAPS_API_KEY` (from `.env`) server-side. It
-reads only the JSON files — never the DB. Launch with `track-me serve`.
+Google Maps JS API, injecting `GOOGLE_MAPS_API_KEY` (from `.env`) server-side. The
+map pages read only the JSON files; the `/build` page's APIs open the DB
+read-only. Launch with `track-me serve` (local only — it is no longer deployed).
 
 The map UI (`map.html`) is **client-side interactive**: when the JSON carries a
 `points` payload (compact `point_fields` rows — see `timeline.points_payload`,
@@ -131,6 +133,23 @@ histogram under the map scrubs to any window and the map **re-clusters the point
 live** at country / city / neighborhood (~1 km grid) granularity — auto-selected
 from the window length, or forced via the Auto/Country/City/Area toggle. Timelines
 without `points` fall back to the old static `stays` markers.
+
+## MCP server (what Cloud Run runs)
+
+`src/track_me/mcp_server.py` (FastMCP) exposes **read-only** tools over the
+catalog — `catalog_overview · find_places · find_photos · get_trips ·
+place_stats · busiest_days` — so a chat client (ChatGPT, Claude) can answer
+questions about the user's travels. Tool logic is plain functions taking a
+`Database` (tested directly in `tests/test_mcp_server.py`); `create_server()`
+wraps them. Queries go through `Database.search_located/search_places/
+catalog_summary`; `get_trips` reuses `timeline.build_stays`. Results are capped
+and sampled to stay small, and carry `google_photos_url` + a Google Maps link —
+no images.
+
+Over HTTP it requires **Google OAuth** (FastMCP's OAuth proxy) and
+`AllowlistGoogleProvider` rejects any token whose verified email is not in
+`MCP_ALLOWED_EMAILS` — keep it fail-closed. `--no-auth` is refused off loopback.
+Keep every tool read-only. Deployment runbook: `DEPLOY.md`.
 
 ## Testing
 

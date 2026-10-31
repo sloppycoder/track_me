@@ -60,6 +60,22 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 CF_ACCESS_TEAM_DOMAIN = os.getenv("CF_ACCESS_TEAM_DOMAIN", "")
 CF_ACCESS_AUD = os.getenv("CF_ACCESS_AUD", "")
 
+# --- MCP server (Google OAuth) ------------------------------------------
+# `track-me mcp` serves read-only catalog tools to chat clients (ChatGPT,
+# Claude). Over HTTP it requires Google sign-in: MCP_BASE_URL is the public URL
+# (the Google OAuth redirect URI is MCP_BASE_URL + "/auth/callback"), and only
+# the comma-separated MCP_ALLOWED_EMAILS may connect. MCP_JWT_SIGNING_KEY signs
+# the tokens the server hands to clients; unset, FastMCP derives it from the
+# client secret. OAuth state (client registrations, tokens) lives under
+# FASTMCP_HOME — point it at persistent storage so restarts keep clients signed in.
+MCP_BASE_URL = os.getenv("MCP_BASE_URL", "")
+GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+MCP_ALLOWED_EMAILS = frozenset(
+    e.strip().lower() for e in os.getenv("MCP_ALLOWED_EMAILS", "").split(",") if e.strip()
+)
+MCP_JWT_SIGNING_KEY = os.getenv("MCP_JWT_SIGNING_KEY") or None
+
 
 def ensure_dirs() -> None:
     """Create the userdata directories if missing (call before writing)."""

@@ -1,6 +1,6 @@
 # Trunk-based: runs on PRs and pushes to main. Lints + tests every change, then
-# (only on a push to main, or a manual run) builds the viewer container and
-# deploys it to Cloud Run. See DEPLOY.md for the one-time GCP/WIF setup.
+# (only on a push to main, or a manual run) builds the MCP-server container and
+# deploys it to Cloud Run. See DEPLOY.md for the one-time GCP/WIF/OAuth setup.
 on:
   push:
     branches:
@@ -93,6 +93,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The server must know its own public URL (OAuth metadata + the Google
+      # redirect URI MCP_BASE_URL/auth/callback). Use the repo variable
+      # MCP_BASE_URL if set (e.g. a custom domain), else the service's existing
+      # run.app URL — stable across deploys of the same service name.
+      - name: Resolve public URL
+        id: url
+        env:
+          MCP_BASE_URL_OVERRIDE: ${{ vars.MCP_BASE_URL }}
+        run: |
+          URL="${MCP_BASE_URL_OVERRIDE}"
+          if [ -z "$URL" ]; then
+            URL=$(gcloud run services describe "${SERVICE_NAME}" \
+              --project="${GCP_PROJECT}" --region="${GCP_REGION}" \
+              --format='value(status.url)' 2>/dev/null || true)
+          fi
+          if [ -z "$URL" ]; then
+            echo "::error::No MCP_BASE_URL repo variable and no existing service URL" \
+              "— set vars.MCP_BASE_URL (see DEPLOY.md)."
+            exit 1
+          fi
+          URL="${URL%/}"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "::notice::MCP endpoint ${URL}/mcp — Google OAuth redirect URI ${URL}/auth/callback"
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "${SERVICE_NAME}" \
@@ -110,16 +134,23 @@ jobs:
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
             --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
             --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
-            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,DB_IMMUTABLE=1,CF_ACCESS_TEAM_DOMAIN=vino9,CF_ACCESS_AUD=466504f0fa8c50e3967b776331a7cc96d2c52f9d789a5df4a31f225ad5967dfe" \
-            --set-secrets="GOOGLE_MAPS_API_KEY=track-me-maps-key:latest"
-            # DB_IMMUTABLE=1: the viewer opens the SQLite catalog read-only +
+            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,DB_IMMUTABLE=1,FASTMCP_HOME=/mnt/gcs/track_me/mcp_oauth,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
+            --set-secrets="GOOGLE_OAUTH_CLIENT_ID=track-me-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=track-me-oauth-client-secret:latest,MCP_ALLOWED_EMAILS=track-me-mcp-allowed-emails:latest"
+            # --allow-unauthenticated: Cloud Run lets requests through; the app
+            # itself enforces Google OAuth + the MCP_ALLOWED_EMAILS allowlist on
+            # every /mcp request (401 otherwise). Chat clients can't mint Cloud
+            # Run IAM tokens, so IAM auth isn't an option here.
+            #
+            # DB_IMMUTABLE=1: the server opens the SQLite catalog read-only +
             # immutable, so SQLite skips locking/WAL over the gcsfuse mount. Safe
             # because ingest/geocode never run in this container — the DB is only
             # rewritten out-of-band (upload a fresh object; instances restart to
             # pick it up). Drop this env var if the mounted DB is ever written live.
             #
-            # Cloudflare Access is ON: CF_ACCESS_AUD is the "lee" Access app's AUD
-            # tag (whole-host lee.vino9.net/*). auth.py enforces the JWT, so a
-            # request without a valid Access token gets 403 — this also closes the
-            # direct *.run.app bypass. The AUD is the public `aud` claim (not a
-            # secret); set it back to "ignore" to disable Access without a redeploy.
+            # FASTMCP_HOME: OAuth state (client registrations + encrypted tokens,
+            # one small file per key) on the bucket, so a restart or scale-to-zero
+            # doesn't sign ChatGPT out. max-instances=1 keeps token refresh
+            # single-writer.
+            #
+            # --set-env-vars / --set-secrets REPLACE the old viewer's settings
+            # (Cloudflare Access vars, Maps key), which this service no longer uses.
