@@ -147,7 +147,8 @@ and runs `gcloud run deploy`.
 
 ## Connect ChatGPT
 
-In ChatGPT, add a custom connector / app (developer mode, depending on your plan)
+ChatGPT supports custom MCP servers only on **web** and only on some plans, and **not
+on mobile** (see README, "Which clients work"). Where available, add a custom connector / app
 with the server URL **`<SERVICE_URL>/mcp`** and **OAuth** authentication. ChatGPT
 registers itself with the server, sends you to a consent page and then to Google
 sign-in; sign in with an allowlisted account. Any other Google account completes

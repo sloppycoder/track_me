@@ -136,6 +136,12 @@ Over HTTP it requires **Google OAuth** (FastMCP's OAuth proxy) and
 `MCP_ALLOWED_EMAILS` — keep it fail-closed. `--no-auth` is refused off loopback.
 Keep every tool read-only. Deployment runbook: `DEPLOY.md`.
 
+**Client support (verified against OpenAI's help center, 2026-10-31):** the Cloud Run
+server works with Claude desktop/web/mobile as a custom connector. ChatGPT cannot use
+custom MCP servers on mobile ("web only"), and on web only on Business/Enterprise/Edu
+(Pro: read/fetch). Don't promise ChatGPT mobile support. Details and caveats (incl.
+`offline_access`) are in `README.md` → "Which clients work".
+
 ## Testing
 
 ```bash
