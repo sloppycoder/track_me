@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Retire the tracker VM: stop it, snapshot its boot disk as tracker-base-<yyyymmdd>
+# Shelve the tracker VM (put it away until needed again): stop it, snapshot its boot disk as tracker-base-<yyyymmdd>
 # (UTC date; the next create_vm.sh picks the newest), then delete the VM. The boot
 # disk is deleted with the VM; any attached scratch disk is deleted too and is NOT
 # snapshotted. The VM is deleted only after the snapshot is READY.
 #
-# usage: retire_vm.sh [--yes]       (without --yes only shows the plan)
+# usage: shelve_vm.sh [--yes]       (without --yes only shows the plan)
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 
@@ -34,4 +34,4 @@ echo ">> ${SNAP} is READY. Deleting ${VM} and its disks..."
 gcloud compute instances delete "${VM}" "${GC[@]}" --delete-disks=all --quiet \
   || echo ">> delete reported an error; checking whether it went through..."
 poll 36 gone instances "${VM}" || die "${VM} still exists"
-echo ">> Retired. Restore with create_vm.sh (uses the newest tracker-base-*)."
+echo ">> Shelved. Bring it back with create_vm.sh (uses the newest tracker-base-*)."

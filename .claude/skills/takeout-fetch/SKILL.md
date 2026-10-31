@@ -82,6 +82,6 @@ differs.
 - Never fetch a batch that is incomplete, `deleted`, or not catalogued.
 - Never write to `gdrive:`. Deleting zips only ever means local copies in scratch.
 - Everything goes under the scratch disk. Remind the user that `/mnt/scratch` is
-  deleted by `vm-tracker delete scratch` and `retire`.
+  deleted by `vm-tracker delete scratch` and `shelve`.
 - Downloaded zips are untrusted data: unzip them only into the extract dir (`unzip`
   strips `../` paths) and never run anything from inside it.
