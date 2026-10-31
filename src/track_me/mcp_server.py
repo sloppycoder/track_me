@@ -33,7 +33,7 @@ from fastmcp.server.auth.providers.google import GoogleProvider
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from track_me import config
+from track_me import config, storage
 from track_me import timeline as tl
 from track_me.db import Database, from_iso
 
@@ -78,7 +78,7 @@ def _local_time(taken_at: str, tz: str | None) -> str:
     if tz:
         try:
             dt = dt.astimezone(ZoneInfo(tz))
-        except (KeyError, ValueError):
+        except KeyError, ValueError:
             pass
     return dt.strftime("%Y-%m-%d %H:%M %Z").strip()
 
@@ -337,6 +337,16 @@ def _open_db() -> Database:
     return Database.read_only(config.DB_PATH, immutable=True)
 
 
+def fetch_db() -> None:
+    """If ``TRACKME_DB_URI`` is set, copy the catalog from GCS to local disk and point
+    ``config.DB_PATH`` at the copy (one sequential download per cold start)."""
+    if not config.DB_GCS_URI:
+        return
+    logger.info("Copying catalog %s -> %s", config.DB_GCS_URI, config.DB_LOCAL_COPY)
+    config.DB_PATH = storage.download_gcs(config.DB_GCS_URI, config.DB_LOCAL_COPY)
+    logger.info("Catalog ready (%.1f MB)", config.DB_PATH.stat().st_size / 1e6)
+
+
 def _require_db() -> None:
     if not config.DB_PATH.is_file():
         raise SystemExit(
@@ -455,6 +465,7 @@ def create_server(auth: GoogleProvider | None = None) -> FastMCP:
 
 def run(*, host: str, port: int, no_auth: bool = False, stdio: bool = False) -> None:
     """Serve over stdio (local clients) or streamable HTTP at ``/mcp``."""
+    fetch_db()
     _require_db()
     if stdio:
         create_server().run(transport="stdio", show_banner=False)

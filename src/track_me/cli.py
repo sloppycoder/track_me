@@ -5,8 +5,7 @@ A single entrypoint over the local SQLite pipeline:
     track-me ingest <takeout-dir> [--force] [--thumbnails] [--limit N]
     track-me geocode [--resolution 9] [--recalculate] [--estimate] [--derive-only]
     track-me export [--format gpx|geojson] [--output FILE] [--year Y]
-    track-me timeline --start ISO --end ISO [--level country|city] [--write ...]
-    track-me serve [--port 5000]        # launch the timeline map viewer
+    track-me timeline --start ISO --end ISO [--level country|city]
     track-me mcp [--host H] [--port 8080] [--no-auth | --stdio]   # MCP server for chat clients
 """
 
@@ -16,7 +15,6 @@ import argparse
 import io
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -154,28 +152,6 @@ def _cmd_timeline(args: argparse.Namespace) -> None:
     )
     print(tl.preview(stays))
 
-    if not args.write:
-        print("\n(preview only — re-run with --write --id --title once the user confirms)")
-        return
-    if not args.id or not args.title:
-        print("--write requires --id and --title", file=sys.stderr)
-        raise SystemExit(1)
-    doc = tl.to_document(
-        stays,
-        timeline_id=args.id,
-        title=args.title,
-        prompts=args.prompt or [],
-        points=points if args.embed_points else None,
-    )
-    out = tl.write_timeline(doc)
-    print(f"\nwrote {out}")
-
-
-def _cmd_serve(args: argparse.Namespace) -> None:
-    # Run the Flask viewer as a module so package imports resolve cleanly.
-    env = {**os.environ, "VIEWER_PORT": str(args.port)}
-    subprocess.run([sys.executable, "-m", "track_me.viewer.app"], env=env, check=True)
-
 
 def _cmd_mcp(args: argparse.Namespace) -> None:
     from track_me import mcp_server
@@ -224,30 +200,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_export.add_argument("--year", type=int, help="filter to a single local year")
     p_export.set_defaults(func=_cmd_export)
 
-    p_tl = sub.add_parser("timeline", help="Build a travel timeline (preview; --write to save)")
+    p_tl = sub.add_parser("timeline", help="Preview a travel timeline (stays) for a date window")
     p_tl.add_argument("--start", required=True, help="ISO date, inclusive (UTC)")
     p_tl.add_argument("--end", required=True, help="ISO date, exclusive (UTC)")
     p_tl.add_argument("--level", choices=["country", "city"], default="country")
     p_tl.add_argument("--region", nargs="*", help="restrict to these ISO country codes")
     p_tl.add_argument("--merge-km", type=float, default=50.0, help="city metro merge radius")
     p_tl.add_argument("--min-hours", type=int, default=24, help="blip-smoothing threshold")
-    p_tl.add_argument("--write", action="store_true", help="persist (only after user confirms)")
-    p_tl.add_argument("--id", help="timeline id / filename stem (required with --write)")
-    p_tl.add_argument("--title", help="human title (required with --write)")
-    p_tl.add_argument(
-        "--prompt", action="append", default=[], help="repeatable; the prompt trail"
-    )
-    p_tl.add_argument(
-        "--no-points",
-        dest="embed_points",
-        action="store_false",
-        help="omit the per-photo points payload the interactive viewer uses to re-cluster",
-    )
-    p_tl.set_defaults(func=_cmd_timeline, embed_points=True)
-
-    p_serve = sub.add_parser("serve", help="Launch the timeline map viewer")
-    p_serve.add_argument("--port", type=int, default=5000, help="port (default: 5000)")
-    p_serve.set_defaults(func=_cmd_serve)
+    p_tl.set_defaults(func=_cmd_timeline)
 
     p_mcp = sub.add_parser("mcp", help="Serve read-only catalog tools to MCP chat clients")
     p_mcp.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")

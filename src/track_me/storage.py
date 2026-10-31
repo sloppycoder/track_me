@@ -98,12 +98,29 @@ class S3Store:
         return self.client.get_object(Bucket=self.bucket, Key=key, Range=rng)["Body"].read()
 
 
+def download_gcs(uri: str, dest: str | Path) -> Path:
+    """Copy one ``gs://bucket/key`` object to ``dest`` (atomically, via a ``.part`` file).
+
+    Uses Application Default Credentials (the Cloud Run service account there)."""
+    from google.cloud import storage
+
+    bucket, _, key = uri.removeprefix("gs://").partition("/")
+    if not bucket or not key:
+        raise ValueError(f"expected gs://bucket/key, got {uri!r}")
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_name(dest.name + ".part")
+    storage.Client().bucket(bucket).blob(key).download_to_filename(str(part))
+    part.replace(dest)
+    return dest
+
+
 def _mtime(ts: float) -> datetime | None:
     from datetime import UTC
 
     try:
         return datetime.fromtimestamp(ts, tz=UTC)
-    except (OverflowError, OSError, ValueError):
+    except OverflowError, OSError, ValueError:
         return None
 
 

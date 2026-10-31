@@ -1,25 +1,22 @@
 """Build travel timelines from the photo catalog (Django-free).
 
 Reads the media/place schema via db.py and applies the recipe documented in
-CLAUDE.md: pull located photos in time order -> segment on label change -> smooth
+AGENTS.md: pull located photos in time order -> segment on label change -> smooth
 sub-day blips -> centroid per run. Country labels come from ``place.country_code``;
 city-tier labels come from :func:`city_label` — the fine ``place.city``, except a
 few metros (Tokyo, Hanoi) collapse their wards/districts onto ``place.admin1``. All
 Google-derived at geocode time, so no query-time reverse-geocoding is needed.
 
-The output document matches the viewer/skill schema (stays + prompts + metadata).
 """
 
 from __future__ import annotations
 
-import json
 import math
 from collections import Counter
 from datetime import timedelta
-from pathlib import Path
 
 from track_me import config
-from track_me.db import Database, from_iso, now_utc
+from track_me.db import Database, from_iso
 
 
 # --------------------------------------------------------------------------- #
@@ -188,89 +185,6 @@ def city_stays(points: list[dict], *, merge_km: float = 50.0, min_hours: int = 2
         _segment([p for c in clusters for p in c], key=lambda p: p["_label"]), min_hours
     )
     return [_stay_from_run(r["pts"], r["key"]) for r in runs]
-
-
-# --------------------------------------------------------------------------- #
-# 4. Points payload (for the interactive viewer)                              #
-# --------------------------------------------------------------------------- #
-# Compact, self-describing columnar rows so the viewer can filter by time and
-# re-cluster at any granularity (country / city / neighborhood) client-side.
-# NOTE: the "city" column carries city_label() — the fine place.city, except a
-# few metros collapse to admin1 (see METRO_AS_CITY) — so the viewer's city-level
-# clustering shows real cities (Nagoya, Osaka) while Tokyo/Hanoi wards don't
-# fragment. Field name kept as "city"; the viewer reads it by name, no change.
-POINT_FIELDS = ["t", "lat", "lng", "cc", "city", "photo_id"]
-_PHOTO_URL_PREFIX = "https://photos.google.com/photo/"
-
-
-def _photo_id(url: str | None) -> str | None:
-    """Strip the common Google Photos prefix to keep the payload small.
-
-    Non-matching URLs are kept whole; the viewer treats any value starting with
-    ``http`` as a full URL and otherwise re-prepends the prefix."""
-    if not url:
-        return None
-    return url[len(_PHOTO_URL_PREFIX) :] if url.startswith(_PHOTO_URL_PREFIX) else url
-
-
-def points_payload(points: list[dict]) -> list[list]:
-    """Turn loaded ``load_points`` rows into compact columnar POINT_FIELDS rows."""
-    rows: list[list] = []
-    for p in points:
-        if p["lat"] is None or p["lng"] is None:
-            continue
-        t = p["t"]
-        # minute resolution is plenty for a timeline and trims the payload
-        ts = t.strftime("%Y-%m-%dT%H:%M") if t is not None else (p["local_date"] or "")
-        rows.append(
-            [
-                ts,
-                round(p["lat"], 5),
-                round(p["lng"], 5),
-                p["cc"],
-                city_label(p),
-                _photo_id(p["url"]),
-            ]
-        )
-    return rows
-
-
-# --------------------------------------------------------------------------- #
-# 5. Document + persist                                                        #
-# --------------------------------------------------------------------------- #
-def to_document(
-    stays: list[dict],
-    *,
-    timeline_id: str,
-    title: str,
-    prompts: list[str],
-    points: list[dict] | None = None,
-    build: dict | None = None,
-) -> dict:
-    doc = {
-        "id": timeline_id,
-        "title": title,
-        "prompts": prompts,
-        "generated_at": now_utc().replace(microsecond=0).isoformat(),
-        "stays": stays,
-    }
-    if build is not None:
-        # The knob values the web builder used, so /build/<id> can reload them.
-        # Additive and ignored by the viewer.
-        doc["build"] = build
-    if points is not None:
-        doc["photo_url_prefix"] = _PHOTO_URL_PREFIX
-        doc["point_fields"] = POINT_FIELDS
-        doc["points"] = points_payload(points)
-    return doc
-
-
-def write_timeline(doc: dict) -> Path:
-    """Persist to userdata/timelines/<id>.json. Call ONLY after the user confirms."""
-    config.ensure_dirs()
-    out = config.TIMELINES_DIR / f"{doc['id']}.json"
-    out.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
-    return out
 
 
 def preview(stays: list[dict]) -> str:

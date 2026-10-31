@@ -11,13 +11,14 @@ The service exposes read-only catalog tools at **`<SERVICE_URL>/mcp`** for chat
 clients (ChatGPT, Claude …). Access is **Google OAuth** handled by the app itself
 (FastMCP's OAuth proxy) and limited to the emails in `MCP_ALLOWED_EMAILS`; Cloud
 Run runs `--allow-unauthenticated` because chat clients can't mint Cloud Run IAM
-tokens. The map viewer is not deployed; it runs locally with `track-me serve`.
+tokens.
 
-Runtime state (the SQLite DB) is **not** baked into the image — a GCS bucket is
-mounted at `/mnt/gcs` and the app is pointed at it via
-`TRACKME_USERDATA=/mnt/gcs/track_me`. OAuth state (client registrations +
-encrypted tokens) is kept on the same bucket via `FASTMCP_HOME`, so restarts and
-scale-to-zero don't sign clients out.
+Runtime state (the SQLite DB) is **not** baked into the image — at startup the app
+copies `gs://<DATA_BUCKET>/track_me/track_me.db` to `/tmp` (set via
+`TRACKME_DB_URI`; the service account needs read access to the bucket) and serves
+from the copy. `/tmp` is in-memory on Cloud Run, so the container has 1 GiB. No
+bucket is mounted: OAuth state (`FASTMCP_HOME`) is on ephemeral disk, so after a
+restart or scale-to-zero chat clients sign in again.
 
 Deploy auth is keyless via **Workload Identity Federation** — no service-account
 keys in GitHub.
@@ -85,15 +86,15 @@ PROJECT_ID=<PROJECT_ID>
 SA=track-me@${PROJECT_ID}.iam.gserviceaccount.com
 
 printf '%s' 'CLIENT_ID.apps.googleusercontent.com' | \
-  gcloud secrets create track-me-oauth-client-id --project="$PROJECT_ID" --data-file=-
+  gcloud secrets create my-mcp-oauth-client-id --project="$PROJECT_ID" --data-file=-
 printf '%s' 'GOCSPX-...' | \
-  gcloud secrets create track-me-oauth-client-secret --project="$PROJECT_ID" --data-file=-
+  gcloud secrets create my-mcp-oauth-client-secret --project="$PROJECT_ID" --data-file=-
 # comma-separated Google account emails allowed to use the server
 printf '%s' 'you@gmail.com' | \
   gcloud secrets create track-me-mcp-allowed-emails --project="$PROJECT_ID" --data-file=-
 # rotate later: gcloud secrets versions add <name> --data-file=-
 
-for s in track-me-oauth-client-id track-me-oauth-client-secret track-me-mcp-allowed-emails; do
+for s in my-mcp-oauth-client-id my-mcp-oauth-client-secret track-me-mcp-allowed-emails; do
   gcloud secrets add-iam-policy-binding "$s" --project="$PROJECT_ID" \
     --member="serviceAccount:${SA}" --role="roles/secretmanager.secretAccessor"
 done
@@ -119,8 +120,8 @@ From a local `userdata/`:
 gsutil cp userdata/track_me.db gs://<DATA_BUCKET>/track_me/track_me.db
 ```
 
-The server opens the DB read-only + immutable (no locks). After uploading a new
-copy, deploy a new revision (or restart the service) so instances reopen it.
+The server opens its local copy read-only + immutable (no locks). After uploading
+a new copy, deploy a new revision (or restart the service) so instances re-copy it.
 
 ### 5. Add the two GitHub repo secrets
 

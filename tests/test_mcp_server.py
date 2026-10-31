@@ -279,3 +279,38 @@ def test_allowlist_must_not_be_empty(tmp_path, monkeypatch):
             base_url="https://example.run.app",
             allowed_emails=frozenset(),
         )
+
+
+# --- cold-start DB copy ----------------------------------------------------
+def test_fetch_db_noop_without_uri(monkeypatch, tmp_path):
+    db_path = tmp_path / "t.db"
+    monkeypatch.setattr(config, "DB_GCS_URI", "")
+    monkeypatch.setattr(config, "DB_PATH", db_path)
+    ms.fetch_db()
+    assert config.DB_PATH == db_path
+
+
+def test_fetch_db_copies_and_repoints(monkeypatch, tmp_path):
+    local = tmp_path / "tmp" / "track_me.db"
+    calls = []
+
+    def fake_download(uri, dest):
+        calls.append(uri)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"sqlite")
+        return dest
+
+    monkeypatch.setattr(config, "DB_GCS_URI", "gs://bkt/track_me/track_me.db")
+    monkeypatch.setattr(config, "DB_LOCAL_COPY", local)
+    monkeypatch.setattr(config, "DB_PATH", tmp_path / "unused.db")
+    monkeypatch.setattr(ms.storage, "download_gcs", fake_download)
+    ms.fetch_db()
+    assert calls == ["gs://bkt/track_me/track_me.db"]
+    assert config.DB_PATH == local
+
+
+def test_download_gcs_rejects_bad_uri(tmp_path):
+    from track_me import storage
+
+    with pytest.raises(ValueError, match="gs://bucket/key"):
+        storage.download_gcs("gs://bucket-only", tmp_path / "x.db")

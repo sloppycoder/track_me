@@ -12,25 +12,23 @@ of truth you keep.
 
 | Tool | Purpose |
 | --- | --- |
-| Python 3.13 + stdlib `sqlite3` | catalog + data layer (no ORM) |
-| [Flask](https://flask.palletsprojects.com/) | the Google Maps timeline viewer |
+| Python 3.14 + stdlib `sqlite3` | catalog + data layer (no ORM) |
 | [FastMCP](https://gofastmcp.com/) | MCP server for chat clients (ChatGPT, Claude) |
 | [H3](https://h3geo.org/) | spatial cells for batched geocoding + clustering |
-| Google Maps API | reverse geocoding + the map viewer |
+| Google Maps API | reverse geocoding |
 | [uv](https://docs.astral.sh/uv/) | dependency + virtualenv management |
 | [ruff](https://docs.astral.sh/ruff/) / [ty](https://github.com/astral-sh/ty) | lint + format / type checking |
 
-Requires **Python 3.13+**. Not Django; not a web app — a CLI plus a tiny local
-viewer. All code lives under `src/track_me/`.
+Requires **Python 3.14+**. Not Django; not a web app — a CLI plus an MCP server. All code lives under `src/track_me/`.
 
 ## Setup
 
 ```shell
 uv sync                                   # create venv + install deps (+ the `track-me` CLI)
-echo "GOOGLE_MAPS_API_KEY=..." > .env     # needed for the geocode step + the viewer
+echo "GOOGLE_MAPS_API_KEY=..." > .env     # needed for the geocode step
 ```
 
-Local state (SQLite DB, thumbnails, timelines) lives under `userdata/` and is
+Local state (SQLite DB, thumbnails) lives under `userdata/` and is
 gitignored. Point it elsewhere with `TRACKME_USERDATA` (default `./userdata`).
 The schema is created automatically on first use — no migrations.
 
@@ -56,30 +54,14 @@ track-me export [--format gpx|geojson] [--year YYYY] [--output FILE]
 `ingest` and `geocode` are **re-runnable and incremental**: already-seen items
 (matched by `dedupe_key`) are skipped and manual edits are never overwritten.
 
-## Build & view a travel timeline
+## Preview a travel timeline
 
 ```shell
-# Build a timeline (preview; --write persists to userdata/timelines/<id>.json).
 track-me timeline --start 2019-01-01 --end 2020-01-01 --level country
-track-me timeline --start 2019-01-01 --end 2020-01-01 --level country \
-    --write --id countries-2019 --title "Countries visited in 2019"
-
-# Launch the Google Maps viewer at http://localhost:5000.
-track-me serve
 ```
 
-`--write` also embeds a compact per-photo **points** payload in the JSON so the
-viewer can re-cluster on the fly; pass `--no-points` to omit it for a lighter file.
-
-The viewer is interactive: a time-range slider (with a photo-density histogram)
-under the map lets you scrub to any window, and the map POIs adapt from **country
-→ city → neighborhood** as you narrow the range (or force a level with the
-Auto / Country / City / Area toggle).
-
-You can also build timelines from the browser: open `http://localhost:5000/build`,
-drag the time-range slider, toggle Country/City, tune the merge/smoothing knobs
-against a live map preview, then **Save**. It calls the same engine as
-`track-me timeline`, so the saved JSON is identical to the CLI for the same knobs.
+Prints the chronological, non-overlapping stays for the window (`--level city` for
+an itinerary). The same engine backs the MCP server's `get_trips` tool.
 
 ## Ask questions from a chat client (MCP server)
 
@@ -135,7 +117,7 @@ track-me mcp --stdio`.
 Over HTTP (without `--no-auth`) the server requires **Google sign-in** and only
 admits the verified emails in `MCP_ALLOWED_EMAILS`. It needs `MCP_BASE_URL`,
 `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `MCP_ALLOWED_EMAILS`
-(and `FASTMCP_HOME` on persistent storage in production) — see **`DEPLOY.md`**.
+(and `TRACKME_DB_URI=gs://bucket/key` to copy the catalog from GCS at startup) — see **`DEPLOY.md`**.
 To connect ChatGPT, add a custom connector / app with the URL
 `https://<service>.run.app/mcp` and OAuth authentication; it walks you through
 the Google sign-in.
@@ -155,12 +137,11 @@ ty check .
 The **MCP server** ships to **Cloud Run** (region `us-west1`) from GitHub Actions: every
 push lints + tests, and a push to `main` builds the container and deploys it. The
 concrete project / bucket / service-account values live only in the workflow's
-`env:` block; the docs use placeholders. Runtime data (the SQLite DB + timelines)
-is **not** in the image — a GCS bucket is mounted at `/mnt/gcs` and the app reads
-it via `TRACKME_USERDATA=/mnt/gcs/track_me`. Deploy auth is keyless via **Workload
+`env:` block; the docs use placeholders. Runtime data (the SQLite DB)
+is **not** in the image — the app copies it from GCS to `/tmp` at cold start
+(`TRACKME_DB_URI`). Deploy auth is keyless via **Workload
 Identity Federation** (no service-account keys in GitHub). Users authenticate to
-the server with **Google OAuth**, limited to an email allowlist. The map viewer is
-not deployed; it runs locally with `track-me serve`.
+the server with **Google OAuth**, limited to an email allowlist.
 
 **`DEPLOY.md`** has the full runbook (what's already provisioned, the remaining
 one-time steps, and how to run the image locally). The identity setup below is
@@ -175,7 +156,7 @@ via WIF) and the Cloud Run **runtime** identity. Run once per project:
 PROJECT_ID=your-gcp-project                     # e.g. the GCP project id
 PROJECT_NUM=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 REPO=your-org/your-repo                         # owner/repo allowed to deploy
-BUCKET=your-data-bucket                         # GCS bucket for the DB + timelines
+BUCKET=your-data-bucket                         # GCS bucket for the DB
 SA=track-me@${PROJECT_ID}.iam.gserviceaccount.com
 
 # APIs + the image registry
@@ -199,7 +180,7 @@ gcloud iam workload-identity-pools providers create-oidc github-provider \
   --attribute-condition="assertion.repository=='${REPO}'"
 
 # Roles: (1) let the repo impersonate the SA, (2) let the SA run-as itself,
-# (3) deploy rights, (4) read/write the mounted bucket.
+# (3) deploy rights, (4) read the DB from the bucket.
 PRINCIPAL="principalSet://iam.googleapis.com/projects/${PROJECT_NUM}/locations/global/workloadIdentityPools/github-pool/attribute.repository/${REPO}"
 gcloud iam service-accounts add-iam-policy-binding "$SA" \
   --role=roles/iam.workloadIdentityUser --member="$PRINCIPAL"
@@ -227,4 +208,4 @@ and seeding the bucket are covered in **`DEPLOY.md`**.
 ## More
 
 - **`DEPLOY.md`** — Cloud Run deployment runbook.
-- **`CLAUDE.md`** — working agreement for coding agents (structure, commands).
+- **`AGENTS.md`** — working agreement for coding agents (structure, commands).

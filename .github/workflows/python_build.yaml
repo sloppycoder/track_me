@@ -20,7 +20,7 @@ env:
   GCP_REGION: us-west1 # "oregon"
   SERVICE_NAME: track-me
   AR_REPO: track-me # Artifact Registry repo (Docker format) in GCP_REGION
-  GCS_BUCKET: vinolab # mounted at runtime; TRACKME_USERDATA points inside it
+  GCS_BUCKET: vinolab # holds track_me/track_me.db, copied to /tmp at cold start
 
 jobs:
   pytest:
@@ -34,8 +34,8 @@ jobs:
           version: "0.7.19"
           enable-cache: true
 
-      - name: Install Python 3.13
-        run: uv python install 3.13
+      - name: Install Python 3.14
+        run: uv python install 3.14
 
       - name: Install dependencies
         run: uv sync
@@ -127,25 +127,10 @@ jobs:
             --execution-environment=gen2 \
             --port=8080 \
             --cpu=1 \
-            --memory=512Mi \
+            --memory=1Gi \
             --max-instances=1 \
             --timeout=60s \
             --allow-unauthenticated \
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
-            --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
-            --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
-            --set-env-vars="TRACKME_USERDATA=/mnt/gcs/track_me,FASTMCP_HOME=/mnt/gcs/track_me/mcp_oauth,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
-            --set-secrets="GOOGLE_OAUTH_CLIENT_ID=track-me-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=track-me-oauth-client-secret:latest,MCP_ALLOWED_EMAILS=track-me-mcp-allowed-emails:latest"
-            # --allow-unauthenticated: Cloud Run lets requests through; the app
-            # itself enforces Google OAuth + the MCP_ALLOWED_EMAILS allowlist on
-            # every /mcp request (401 otherwise). Chat clients can't mint Cloud
-            # Run IAM tokens, so IAM auth isn't an option here.
-            #
-            # The server opens the SQLite catalog read-only + immutable (no locks,
-            # no -journal/-wal files), which suits the gcsfuse mount: the DB is only
-            # replaced out-of-band (upload a fresh object; restart to pick it up).
-            #
-            # FASTMCP_HOME: OAuth state (client registrations + encrypted tokens,
-            # one small file per key) on the bucket, so a restart or scale-to-zero
-            # doesn't sign ChatGPT out. max-instances=1 keeps token refresh
-            # single-writer.
+            --set-env-vars="TRACKME_DB_URI=gs://${GCS_BUCKET}/track_me/track_me.db,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
+            --set-secrets="GOOGLE_OAUTH_CLIENT_ID=my-mcp-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=my-mcp-oauth-client-secret:latest,MCP_ALLOWED_EMAILS=track-me-mcp-allowed-emails:latest"

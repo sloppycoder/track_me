@@ -41,5 +41,5 @@ docs/timeline.md
 # macOS
 .DS_Store
 
-# All local state: SQLite DB, thumbnails, timelines (private location data)
+# All local state: SQLite DB, thumbnails (private location data)
 /userdata/
