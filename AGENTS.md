@@ -9,7 +9,7 @@ Quick orientation:
 - Local-first tool, **no Django / no ORM** — plain Python over SQLite. All code is
   one package under `src/track_me/`; local state lives under `userdata/`.
 - Entry point is the `track-me` CLI (`src/track_me/cli.py`):
-  `ingest · geocode · export · timeline · serve`.
+  `ingest · geocode · export · timeline · serve · mcp`.
 - Shared agent skills live under `.agents/skills/`. Claude Code compatibility is
   provided with symlinks from `.claude/skills/`.
 - After any change run, in order: `ruff format <file>`, `ruff check . --fix`,

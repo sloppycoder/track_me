@@ -151,7 +151,7 @@ def country_stays(points: list[dict], *, min_hours: int = 24) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # 3b. City-level (stored place.city + proximity clustering for metros)        #
 # --------------------------------------------------------------------------- #
-def _haversine_km(a_lat, a_lng, b_lat, b_lng) -> float:
+def haversine_km(a_lat, a_lng, b_lat, b_lng) -> float:
     r = 6371.0
     p1, p2 = math.radians(a_lat), math.radians(b_lat)
     dp = math.radians(b_lat - a_lat)
@@ -171,7 +171,7 @@ def city_stays(points: list[dict], *, merge_km: float = 50.0, min_hours: int = 2
     clusters: list[list[dict]] = [[labelled[0]]]
     cen_lat, cen_lng, n = labelled[0]["lat"], labelled[0]["lng"], 1
     for p in labelled[1:]:
-        if _haversine_km(cen_lat, cen_lng, p["lat"], p["lng"]) <= merge_km:
+        if haversine_km(cen_lat, cen_lng, p["lat"], p["lng"]) <= merge_km:
             clusters[-1].append(p)
             n += 1
             cen_lat += (p["lat"] - cen_lat) / n

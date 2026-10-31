@@ -156,7 +156,7 @@
 
   <script>
     const TIMELINE_ID = {{ timeline_id | tojson }};
-    // Context-path prefix (e.g. "/trackme" behind the Cloudflare Worker; "" locally).
+    // Context-path prefix (request.script_root: "" unless mounted under a sub-path).
     const BASE = {{ request.script_root | tojson }};
     const DAY = 86400000;
     const MAX_MARKERS = 250;

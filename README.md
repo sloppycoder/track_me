@@ -14,6 +14,7 @@ of truth you keep.
 | --- | --- |
 | Python 3.13 + stdlib `sqlite3` | catalog + data layer (no ORM) |
 | [Flask](https://flask.palletsprojects.com/) | the Google Maps timeline viewer |
+| [FastMCP](https://gofastmcp.com/) | MCP server for chat clients (ChatGPT, Claude) |
 | [H3](https://h3geo.org/) | spatial cells for batched geocoding + clustering |
 | Google Maps API | reverse geocoding + the map viewer |
 | [uv](https://docs.astral.sh/uv/) | dependency + virtualenv management |
@@ -80,6 +81,65 @@ drag the time-range slider, toggle Country/City, tune the merge/smoothing knobs
 against a live map preview, then **Save**. It calls the same engine as
 `track-me timeline`, so the saved JSON is identical to the CLI for the same knobs.
 
+## Ask questions from a chat client (MCP server)
+
+`track-me mcp` serves the catalog to MCP chat clients (ChatGPT, Claude, Gemini
+CLI …) as **read-only tools** — you ask in plain language, the model calls them:
+
+| Tool | Answers |
+| --- | --- |
+| `catalog_overview` | date span, totals, photos per country |
+| `find_places` | exact stored spelling of a city/region ("Hà Nội") |
+| `find_photos` | photos by date / country / city / near a point (sampled, with links) |
+| `get_trips` | the travel timeline: country- or city-level stays |
+| `place_stats` | rank countries or cities by photos / days |
+| `busiest_days` | the days with the most photos in a window |
+
+Results carry each photo's Google Photos link (opens the app on Android) and a
+Google Maps link. No images are returned.
+
+```shell
+track-me mcp --stdio              # local MCP client over stdio, no sign-in
+track-me mcp --no-auth            # local test: http://127.0.0.1:8080/mcp, no sign-in
+track-me mcp                      # HTTP + Google OAuth (what Cloud Run runs)
+```
+
+The catalog is read from `./userdata/track_me.db` relative to the working
+directory (override with `TRACKME_USERDATA` or `DB_PATH`). The server opens it
+**read-only and immutable** — it takes no SQLite locks, so `ingest`/`geocode` can
+run against the same file while it's up.
+
+### Local use over stdio (no auth)
+
+A desktop MCP client (Claude Desktop, Claude Code, Gemini CLI, Cursor …) can launch
+the server itself. The client starts it as a subprocess on your machine, so there's
+no network listener and no sign-in. `uv --directory` makes the repo the working
+directory, so the default `./userdata` resolves:
+
+```json
+{
+  "mcpServers": {
+    "track_me": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/track_me", "run", "track-me", "mcp", "--stdio"]
+    }
+  }
+}
+```
+
+With Claude Code: `claude mcp add track_me -- uv --directory /path/to/track_me run
+track-me mcp --stdio`.
+
+### Remote use over HTTP (Google OAuth)
+
+Over HTTP (without `--no-auth`) the server requires **Google sign-in** and only
+admits the verified emails in `MCP_ALLOWED_EMAILS`. It needs `MCP_BASE_URL`,
+`GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `MCP_ALLOWED_EMAILS`
+(and `FASTMCP_HOME` on persistent storage in production) — see **`DEPLOY.md`**.
+To connect ChatGPT, add a custom connector / app with the URL
+`https://<service>.run.app/mcp` and OAuth authentication; it walks you through
+the Google sign-in.
+
 ## Quality
 
 ```shell
@@ -92,18 +152,15 @@ ty check .
 
 ## Deploy (Cloud Run)
 
-The viewer ships to **Cloud Run** (region `us-west1`) from GitHub Actions: every
+The **MCP server** ships to **Cloud Run** (region `us-west1`) from GitHub Actions: every
 push lints + tests, and a push to `main` builds the container and deploys it. The
 concrete project / bucket / service-account values live only in the workflow's
 `env:` block; the docs use placeholders. Runtime data (the SQLite DB + timelines)
 is **not** in the image — a GCS bucket is mounted at `/mnt/gcs` and the app reads
-it via `TRACKME_USERDATA=/mnt/gcs/track_me`. Auth is keyless via **Workload
-Identity Federation** (no service-account keys in GitHub).
-
-Public access is gated by **Cloudflare Zero Trust Access** at
-`lee.vino9.net/trackme/` — a single Cloudflare Worker path-routes the hostname to
-the Cloud Run backend and the viewer validates the Access JWT. See
-**[`cf/README.md`](cf/README.md)**.
+it via `TRACKME_USERDATA=/mnt/gcs/track_me`. Deploy auth is keyless via **Workload
+Identity Federation** (no service-account keys in GitHub). Users authenticate to
+the server with **Google OAuth**, limited to an email allowlist. The map viewer is
+not deployed; it runs locally with `track-me serve`.
 
 **`DEPLOY.md`** has the full runbook (what's already provisioned, the remaining
 one-time steps, and how to run the image locally). The identity setup below is
@@ -130,7 +187,7 @@ gcloud artifacts repositories create track-me --project="$PROJECT_ID" \
 
 # The service account
 gcloud iam service-accounts create track-me --project="$PROJECT_ID" \
-  --display-name="track_me viewer (Cloud Run + GitHub deploy)"
+  --display-name="track_me MCP server (Cloud Run + GitHub deploy)"
 
 # Workload Identity Federation, locked to one GitHub repo
 gcloud iam workload-identity-pools create github-pool \
@@ -164,11 +221,10 @@ Then set two repo secrets (**Settings → Secrets and variables → Actions**):
 | `GCP_SERVICE_ACCOUNT` | `track-me@<PROJECT_ID>.iam.gserviceaccount.com` |
 
 Neither value is a credential — the WIF provider only mints tokens for the exact
-`REPO` above, so they're safe even in a public repo. The Maps-key secret and
-seeding the bucket are covered in **`DEPLOY.md`**.
+`REPO` above, so they're safe even in a public repo. The OAuth client + secrets
+and seeding the bucket are covered in **`DEPLOY.md`**.
 
 ## More
 
 - **`DEPLOY.md`** — Cloud Run deployment runbook.
-- **`cf/README.md`** — Cloudflare edge: path routing (Worker) + Zero Trust Access.
 - **`CLAUDE.md`** — working agreement for coding agents (structure, commands).

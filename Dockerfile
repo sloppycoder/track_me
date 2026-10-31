@@ -4,7 +4,7 @@
 # --------------------------------------------------------------------------- #
 FROM python:3.13-bookworm AS builder
 LABEL org.opencontainers.image.source="https://github.com/sloppycoder/track_me"
-LABEL org.opencontainers.image.description="track_me travel-timeline viewer"
+LABEL org.opencontainers.image.description="track_me MCP server (read-only photo-catalog tools)"
 
 # uv: fast, lockfile-driven installer. Copy the static binary from the official image.
 COPY --from=ghcr.io/astral-sh/uv:0.7.19 /uv /usr/local/bin/uv
@@ -47,9 +47,8 @@ ENV PATH="/app/venv/bin:$PATH" \
 USER app
 EXPOSE 8080
 
-# Cloud Run sets $PORT (default 8080). Serve the Flask WSGI app with gunicorn.
+# Cloud Run sets $PORT (default 8080). Serve the MCP server (streamable HTTP at
+# /mcp, Google OAuth — see track_me/mcp_server.py) on all interfaces.
 # JSON (exec) form to satisfy the buildkit CMD lint; `sh -c` still expands $PORT,
-# and `exec` replaces the shell so gunicorn is PID 1 and receives OS signals.
-# A single worker keeps the SQLite / gcsfuse reads simple; bump --workers/--threads
-# if you need more concurrency.
-CMD ["sh", "-c", "exec gunicorn --bind \":$PORT\" --workers 1 --threads 8 --timeout 60 track_me.viewer.app:app"]
+# and `exec` replaces the shell so the server is PID 1 and receives OS signals.
+CMD ["sh", "-c", "exec track-me mcp --host 0.0.0.0 --port \"$PORT\""]

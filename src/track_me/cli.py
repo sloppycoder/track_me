@@ -7,6 +7,7 @@ A single entrypoint over the local SQLite pipeline:
     track-me export [--format gpx|geojson] [--output FILE] [--year Y]
     track-me timeline --start ISO --end ISO [--level country|city] [--write ...]
     track-me serve [--port 5000]        # launch the timeline map viewer
+    track-me mcp [--host H] [--port 8080] [--no-auth | --stdio]   # MCP server for chat clients
 """
 
 from __future__ import annotations
@@ -176,6 +177,12 @@ def _cmd_serve(args: argparse.Namespace) -> None:
     subprocess.run([sys.executable, "-m", "track_me.viewer.app"], env=env, check=True)
 
 
+def _cmd_mcp(args: argparse.Namespace) -> None:
+    from track_me import mcp_server
+
+    mcp_server.run(host=args.host, port=args.port, no_auth=args.no_auth, stdio=args.stdio)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="track-me", description="Local photo travel timeline")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -241,6 +248,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve = sub.add_parser("serve", help="Launch the timeline map viewer")
     p_serve.add_argument("--port", type=int, default=5000, help="port (default: 5000)")
     p_serve.set_defaults(func=_cmd_serve)
+
+    p_mcp = sub.add_parser("mcp", help="Serve read-only catalog tools to MCP chat clients")
+    p_mcp.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")
+    p_mcp.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("PORT", "8080")),
+        help="port (default: $PORT or 8080)",
+    )
+    mode = p_mcp.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--no-auth", action="store_true", help="skip Google OAuth (loopback host only; testing)"
+    )
+    mode.add_argument("--stdio", action="store_true", help="stdio transport for local clients")
+    p_mcp.set_defaults(func=_cmd_mcp)
 
     return parser
 
