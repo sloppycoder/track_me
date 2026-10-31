@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "track_me": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "track-me",
+        "mcp",
+        "--stdio"
+      ],
+      "env": {}
+    }
+  }
+}
