@@ -42,7 +42,8 @@ COPY --chown=app:app --from=builder /app /app
 
 ENV PATH="/app/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
+    PORT=8080 \
+    FASTMCP_HOME=/tmp/fastmcp
 
 USER app
 EXPOSE 8080
