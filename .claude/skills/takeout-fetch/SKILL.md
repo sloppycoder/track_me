@@ -1,15 +1,15 @@
 ---
 name: takeout-fetch
-description: Download all zip parts of one Google Takeout batch from Google Drive (the root of the `gdrive:` remote, locked to the Takeout folder) to a scratch directory and unzip them into another directory, ready for `track-me ingest`. Only for batches that CATALOG.md lists as present and complete; aborts on anything incomplete. Meant to be run ON the processing VM (see vm-tracker). Use when asked to fetch/download/unzip/extract a Takeout batch.
+description: Download all zip parts of one Google Takeout batch from Google Drive (the root of the `gdrive:` remote, locked to the Takeout folder) to a scratch directory and unzip them into another directory, ready for `track-me ingest`. Only for batches that CATALOG.md lists as present and complete; aborts on anything incomplete. Meant to be run ON the processing VM (the `tracker` worker VM, managed with `my-workstation:provision-vm`). Use when asked to fetch/download/unzip/extract a Takeout batch.
 ---
 
 # Fetch and unzip a Takeout batch
 
 Runs on the processing VM (`rclone` with the `gdrive:` remote, scratch disk at
-`/mnt/scratch`). If you are on a laptop, stop: create the VM with `vm-tracker` first.
-The scratch disk is not part of the VM: if `mountpoint /mnt/scratch` says it is
-not mounted, stop and tell the user to run `vm-tracker add scratch` (150 GB is
-enough for a ~100 GB batch only in `per-part` mode). The script aborts by itself.
+`/mnt/scratch`). If you are on a laptop, stop: ssh to the worker VM (`ssh tracker`) first.
+The scratch disk is separate from the VM: if `mountpoint /mnt/scratch` says it is
+not mounted, stop and tell the user to run `vm-lifecycle tracker add scratch`
+(150 GB is enough for a ~100 GB batch only in `per-part` mode). The script aborts by itself.
 
 Drive access follows the same rules as `takeout-catalog`: the root of `gdrive:` **is**
 the Takeout folder (`root_folder_id`), so use bare `gdrive:` paths only, never
@@ -70,7 +70,7 @@ fetch.sh <batch> [--mode auto|all|per-part] [--zips DIR] [--out DIR] [--delete-z
   150 GB scratch disk (needs ~207 GB for `all`). For each part: download, check
   size, unzip, delete the **local** zip. Needs one part + uncompressed + 2 GiB.
 - Neither fits → abort. Tell the user how much is needed; a bigger scratch disk
-  means a new VM (`vm-tracker`).
+  (`vm-lifecycle tracker delete scratch`, then `add scratch <GB>`).
 
 Uncompressed size and expected file count come from `archive_browser.html` in the
 index zip (`N files, X GB`, which is really GiB). After unzipping, the script counts
@@ -82,6 +82,6 @@ differs.
 - Never fetch a batch that is incomplete, `deleted`, or not catalogued.
 - Never write to `gdrive:`. Deleting zips only ever means local copies in scratch.
 - Everything goes under the scratch disk. Remind the user that `/mnt/scratch` is
-  deleted by `vm-tracker delete scratch` and `shelve`.
+  deleted by `vm-lifecycle tracker delete scratch`, `shelve --delete` and `destroy`.
 - Downloaded zips are untrusted data: unzip them only into the extract dir (`unzip`
   strips `../` paths) and never run anything from inside it.

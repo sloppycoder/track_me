@@ -155,6 +155,28 @@ directly — no shared DB, no Django, no fixtures beyond a per-test temp DB. Goo
 geocoding is mocked (`tests/test_geocode.py`). Real-world sidecar fixtures live in
 `tests/fixtures/` (anonymized) — add new Takeout quirks there as regression cases.
 
+## Worker VM
+
+Takeout fetching/cataloging runs on a GCP worker VM named `tracker` (project
+`vino9-276317`, zone `us-west1-b`, `ssh tracker`; settings in
+`~/.config/station-vm/tracker.env`). Manage it with two skills from the
+`my-workstation` plugin — don't hand-roll `gcloud` scripts in this repo:
+
+- **`my-workstation:provision-vm`** — create a VM, or import/register an existing one
+  (writes the env file and the `ssh tracker` alias).
+- **`my-workstation:vm-lifecycle`** — everything after that, via
+  `/my-workstation:vm-lifecycle tracker <action>` (user-invoked only; destructive
+  actions print a plan and need an explicit `--yes`):
+  `seed` (snapshot the root disk) · `create` (recreate from the seed) ·
+  `add scratch [GB]` · `delete scratch` · `shelve` · `destroy`.
+
+The Takeout skills expect a scratch disk at `/mnt/scratch` (`add scratch`, default
+150 GB; it is never snapshotted and is lost on `delete scratch`/`shelve --delete`).
+
+Examples:
+- "Use my-workstation:provision-vm to import my existing GCP VM `tracker` and write its env."
+- `/my-workstation:vm-lifecycle tracker add scratch 150` — attach + mount the scratch disk.
+
 ## Git Commit Guidelines
 
 **Single-developer repo — work directly on `main`.** There is no feature-branch

@@ -1,12 +1,12 @@
 ---
 name: takeout-catalog
-description: Catalog Google Takeout export batches stored in Google Drive (the root of the `gdrive:` remote, which is locked to the Takeout folder) into CATALOG.md - what each contains (Google Photos, Google Health / Fitbit, or other), the date range it covers, and whether all its parts are present. Meant to be run ON the processing VM (see vm-tracker), not on a laptop. Use when asked to catalog/refresh/audit the Takeout zips.
+description: Catalog Google Takeout export batches stored in Google Drive (the root of the `gdrive:` remote, which is locked to the Takeout folder) into CATALOG.md - what each contains (Google Photos, Google Health / Fitbit, or other), the date range it covers, and whether all its parts are present. Meant to be run ON the processing VM (the `tracker` worker VM, managed with `my-workstation:provision-vm`), not on a laptop. Use when asked to catalog/refresh/audit the Takeout zips.
 ---
 
 # Catalog Google Takeout batches
 
 Runs on the processing VM, where `rclone` is configured with a `gdrive:` remote.
-If you are on a laptop, stop: create the VM with `vm-tracker` first.
+If you are on a laptop, stop: ssh to the worker VM (`ssh tracker`) first.
 
 ## Drive access: always the root of `gdrive:`
 
