@@ -66,8 +66,9 @@ Three tables (`src/track_me/db.py`); `home` is described after the first two:
 
 - **`home`** — dated home locations (`Home` dataclass), hard-coded in
   `db.HOME_SEED` and rewritten into the table by `init_schema()`. Inclusive
-  `valid_from`/`valid_to`; a gap between rows (the 2024-04-05..2026-11-25 "roaming"
-  period) means no home. `Database.homes()` falls back to `HOME_SEED` if the table is
+  `valid_from`/`valid_to`, contiguous from 1998 (a gap would mean no home). A new
+  home starts the day after leaving the old one, so the trip there is travel. US
+  homes use a 200 mi radius, others 200 km. `Database.homes()` falls back to `HOME_SEED` if the table is
   missing (old read-only catalogs).
 
 All access goes through the `Database` repository (raw SQL, no ORM). Everything
@@ -118,8 +119,8 @@ MCP `get_trips` tool share one deterministic engine (`src/track_me/timeline.py`,
    running centroid into one stay, labelled by the most common `place.city`.
 
 6. Tag each stay `is_travel`: false when its centroid is within the home's
-   `radius_km` (100 mi) of the home active on the stay's first day; always true with
-   no active home (`home` is then null — a normal state, e.g. the roaming period). Computed at query time (never stored on `media`), so fixing a home
+   `radius_km` (200 mi for US homes, 200 km elsewhere) of the home active on the
+   stay's first day; always true with no active home (`home` is then null). Computed at query time (never stored on `media`), so fixing a home
    date needs no backfill. `--travel-only` / MCP `travel_only` hide non-travel stays.
 
 Output: chronological, **non-overlapping** date ranges (a revisited place appears

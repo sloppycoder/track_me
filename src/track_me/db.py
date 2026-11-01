@@ -29,7 +29,10 @@ H3_BASE_RESOLUTION = 11
 # --------------------------------------------------------------------------- #
 # Home locations (hard-coded; see schema.sql `home`)                           #
 # --------------------------------------------------------------------------- #
-HOME_RADIUS_KM = 160.934  # 100 miles: a stay this close to home is not travel
+# A stay whose centroid is this close to home is not travel. In the US a 3-hour drive
+# (~200 miles) is not considered a trip; elsewhere 200 km.
+HOME_RADIUS_KM = 200.0
+HOME_RADIUS_US_KM = 321.869  # 200 miles
 
 
 @dataclass(frozen=True)
@@ -47,19 +50,55 @@ class Home:
         return self.valid_from <= day and (self.valid_to is None or day <= self.valid_to)
 
 
-# Source of truth for home periods. Gaps (e.g. 2024-04-05..2026-11-25, "roaming")
-# are intentional: with no home, every stay is travel. Dates were fixed from photo
-# metadata and the owner's recollection; edit here and re-run init_schema.
+# Source of truth for home periods, contiguous from 1998-04-11 (a gap would mean "no
+# home", where every stay is travel). A home starts the day the user left the previous
+# one, so the trip on the way there counts as travel from the new home (e.g. Paris and
+# NYC en route to Bellingham; Suzhou and Shanghai en route to Chengdu). Dates were fixed
+# from photo metadata and the owner's recollection; edit here and re-run init_schema.
 HOME_SEED: tuple[Home, ...] = (
-    Home("San Jose, CA", 37.3382, -121.8863, "1998-04-11", "2005-10-09"),
+    Home(
+        "San Jose, CA",
+        37.3382,
+        -121.8863,
+        "1998-04-11",
+        "2005-10-09",
+        radius_km=HOME_RADIUS_US_KM,
+    ),
     Home("Beijing, CN", 39.9042, 116.4074, "2005-10-10", "2007-01-17"),
-    Home("San Jose, CA", 37.3382, -121.8863, "2007-01-18", "2010-12-17"),
-    Home("Redmond, WA", 47.6740, -122.1215, "2010-12-18", "2013-07-13"),
+    Home(
+        "San Jose, CA",
+        37.3382,
+        -121.8863,
+        "2007-01-18",
+        "2010-12-17",
+        radius_km=HOME_RADIUS_US_KM,
+    ),
+    Home(
+        "Redmond, WA", 47.6740, -122.1215, "2010-12-18", "2013-07-13", radius_km=HOME_RADIUS_US_KM
+    ),
     Home("Kuala Lumpur, MY", 3.1390, 101.6869, "2013-07-14", "2016-09-18"),
     Home("Singapore, SG", 1.3521, 103.8198, "2016-09-19", "2017-11-01"),
     Home("Kuala Lumpur, MY", 3.1390, 101.6869, "2017-11-02", "2019-01-27"),
-    Home("Singapore, SG", 1.3521, 103.8198, "2019-01-28", "2024-04-04"),
-    Home("Bellingham, WA", 48.7519, -122.4787, "2026-11-26", "2027-06-30"),
+    # Left Singapore for good on 2024-09-17 (flight to Paris).
+    Home("Singapore, SG", 1.3521, 103.8198, "2019-01-28", "2024-09-16"),
+    Home(
+        "Bellingham, WA",
+        48.7519,
+        -122.4787,
+        "2024-09-17",
+        "2025-03-19",
+        radius_km=HOME_RADIUS_US_KM,
+    ),
+    # From the Fukuoka -> Suzhou/Shanghai flight; first Chengdu photo 2025-03-27.
+    Home("Chengdu, CN", 30.6586, 104.0647, "2025-03-20", "2026-11-25"),
+    Home(
+        "Bellingham, WA",
+        48.7519,
+        -122.4787,
+        "2026-11-26",
+        "2027-06-30",
+        radius_km=HOME_RADIUS_US_KM,
+    ),
 )
 
 
