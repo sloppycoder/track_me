@@ -76,8 +76,7 @@ CREATE INDEX IF NOT EXISTS idx_media_h3_cell    ON media (h3_cell);
 CREATE INDEX IF NOT EXISTS idx_media_review     ON media (location_source, needs_review);
 
 -- Where the user lived, and when. Periods are inclusive ISO dates; valid_to NULL =
--- open-ended. A gap between rows (e.g. a roaming period) means "no home", so every
--- stay in it is travel. Rewritten from db.HOME_SEED by init_schema().
+-- open-ended. A gap between rows would mean "no home" (every stay in it is travel). Rewritten from db.HOME_SEED by init_schema().
 CREATE TABLE IF NOT EXISTS home (
     id         INTEGER PRIMARY KEY,
     label      TEXT NOT NULL,

@@ -95,6 +95,14 @@ def test_find_photos_city_matches_admin1_metro(trip):
     assert ms.find_photos(trip, city="tokyo")["total_matches"] == 3
 
 
+def test_city_search_accepts_unnormalized_chinese_spelling(db):
+    db.upsert_place(Place(h3_cell="cCD", city="Chengdu", country_code="CN"))
+    _photo(db, "c1", datetime(2025, 4, 6, 3, tzinfo=dt_timezone.utc), 30.6, 104.0, "cCD")
+    for q in ("Chengdu", "chengdu", "Cheng Du Shi", "cheng du"):
+        assert ms.find_photos(db, city=q)["total_matches"] == 1, q
+    assert ms.find_places(db, "Cheng Du Shi")["places"][0]["city"] == "Chengdu"
+
+
 def test_find_photos_near_and_sampling(trip):
     near = ms.find_photos(trip, near_lat=1.30, near_lng=103.80, radius_km=1)
     assert near["total_matches"] == 2

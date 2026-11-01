@@ -1,6 +1,6 @@
 """Tests for timeline building over the media/place schema."""
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 
 import pytest
@@ -68,16 +68,29 @@ def test_date_window_excludes_outside(trip):
 
 
 # --- home / is_travel -------------------------------------------------------
-from track_me.db import HOME_SEED, Home, home_on  # noqa: E402
+from track_me.db import (  # noqa: E402
+    HOME_RADIUS_KM,
+    HOME_RADIUS_US_KM,
+    HOME_SEED,
+    Home,
+    home_on,
+)
 
 
-def test_home_seed_periods_are_ordered_and_disjoint():
+def test_home_seed_periods_are_ordered_and_contiguous():
     prev_end = None
     for h in HOME_SEED:
         assert h.valid_to is None or h.valid_from <= h.valid_to
         if prev_end:
-            assert prev_end < h.valid_from
+            nxt = (date.fromisoformat(prev_end) + timedelta(days=1)).isoformat()
+            assert h.valid_from == nxt, f"gap or overlap before {h.label} {h.valid_from}"
         prev_end = h.valid_to
+
+
+def test_home_radius_us_200_miles_elsewhere_200_km():
+    for h in HOME_SEED:
+        expected = HOME_RADIUS_US_KM if h.label.endswith((", CA", ", WA")) else HOME_RADIUS_KM
+        assert h.radius_km == expected, h.label
 
 
 def _label(day):
@@ -85,13 +98,15 @@ def _label(day):
     return h.label if h else None
 
 
-def test_home_on_boundaries_and_roaming_gap():
+def test_home_on_boundaries():
     assert _label("1998-04-11") == "San Jose, CA"
     assert _label("2005-10-09") == "San Jose, CA"
     assert _label("2005-10-10") == "Beijing, CN"
-    assert _label("2024-04-04") == "Singapore, SG"
-    assert _label("2024-04-05") is None  # roaming
-    assert _label("2026-11-25") is None
+    assert _label("2024-09-16") == "Singapore, SG"  # last day before flying to Paris
+    assert _label("2024-09-17") == "Bellingham, WA"  # Paris/NYC en route count as travel
+    assert _label("2025-03-19") == "Bellingham, WA"
+    assert _label("2025-03-20") == "Chengdu, CN"  # Fukuoka -> Suzhou/Shanghai
+    assert _label("2026-11-25") == "Chengdu, CN"
     assert _label("2026-11-26") == "Bellingham, WA"
     assert _label("2027-06-30") == "Bellingham, WA"
     assert _label("2027-07-01") is None
@@ -114,7 +129,7 @@ def test_tag_travel_radius_and_no_home():
     ]
     tagged = tl.tag_travel(stays, homes)
     assert [s["is_travel"] for s in tagged] == [False, False, True, True]
-    assert [s["home"] for s in tagged] == ["Singapore"] * 3 + [None]  # absent = roaming
+    assert [s["home"] for s in tagged] == ["Singapore"] * 3 + [None]  # no home covers it
 
 
 def test_build_stays_tags_and_filters(trip):
@@ -131,3 +146,13 @@ def test_get_trips_travel_only(trip):
     out = ms.get_trips(trip, start_date="2019-06-01", end_date="2019-06-09", travel_only=True)
     assert [s["label"] for s in out["stays"]] == ["TH"]
     assert all(s["is_travel"] for s in out["stays"])
+
+
+def test_tag_travel_us_home_uses_200_miles():
+    homes = [Home("Bellingham, WA", 48.7519, -122.4787, "2024-09-17", None, HOME_RADIUS_US_KM)]
+    stays = [
+        {"from": "2024-11-01", "lat": 47.6062, "lng": -122.3321},  # Seattle, ~128 km
+        {"from": "2024-11-05", "lat": 46.6021, "lng": -120.5059},  # Yakima, ~287 km
+        {"from": "2024-11-09", "lat": 45.5152, "lng": -122.6784},  # Portland, ~360 km
+    ]
+    assert [s["is_travel"] for s in tl.tag_travel(stays, homes)] == [False, False, True]

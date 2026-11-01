@@ -104,6 +104,10 @@ def _cmd_geocode(args: argparse.Namespace) -> None:
         print(str(e), file=sys.stderr)
         raise SystemExit(1) from e
 
+    # Re-derive every place's names (offline, no API calls) so changes to the naming
+    # rules (priority chain, Chinese city normalization) take effect on every run.
+    derived = geocoder.derive_all(redo=True)
+
     print("\n" + "=" * 60)
     print(f"Total located items pending: {stats.total_items}")
     print(f"Geocoded {stats.processed} items ({stats.api_calls} API calls)")
@@ -111,6 +115,7 @@ def _cmd_geocode(args: argparse.Namespace) -> None:
         print(f"Skipped (no result): {stats.skipped}")
     if stats.errors:
         print(f"Errors: {stats.errors}")
+    print(f"Re-derived city/admin1 for {derived} places (no API calls)")
     print("=" * 60)
 
 
@@ -209,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_tl.add_argument("--merge-km", type=float, default=50.0, help="city metro merge radius")
     p_tl.add_argument("--min-hours", type=int, default=24, help="blip-smoothing threshold")
     p_tl.add_argument(
-        "--travel-only", action="store_true", help="hide stays within 100 mi of home"
+        "--travel-only", action="store_true", help="hide stays near home (200 mi US, else 200 km)"
     )
     p_tl.set_defaults(func=_cmd_timeline)
 

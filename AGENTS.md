@@ -15,6 +15,7 @@ src/track_me/
   storage.py     # object-store abstraction: LocalStore / S3Store (+ from_uri)
   ingest/        # exif, sidecar, matcher, pipeline (parallel, over the store)
   geocode.py     # reverse-geocoding (fetch + derive)
+  placenames.py  # place-name normalization (Chinese "Cheng Du Shi" -> "Chengdu")
   timeline.py    # build travel timelines from the catalog
   export.py      # GPX / GeoJSON export
   thumbnails.py  # opt-in thumbnail cache
@@ -66,8 +67,9 @@ Three tables (`src/track_me/db.py`); `home` is described after the first two:
 
 - **`home`** — dated home locations (`Home` dataclass), hard-coded in
   `db.HOME_SEED` and rewritten into the table by `init_schema()`. Inclusive
-  `valid_from`/`valid_to`; a gap between rows (the 2024-04-05..2026-11-25 "roaming"
-  period) means no home. `Database.homes()` falls back to `HOME_SEED` if the table is
+  `valid_from`/`valid_to`, contiguous from 1998 (a gap would mean no home). A new
+  home starts the day after leaving the old one, so the trip there is travel. US
+  homes use a 200 mi radius, others 200 km. `Database.homes()` falls back to `HOME_SEED` if the table is
   missing (old read-only catalogs).
 
 All access goes through the `Database` repository (raw SQL, no ORM). Everything
@@ -98,8 +100,15 @@ and a moved location resets `media.geo_cell` so incremental `geocode` re-links i
 **Geocode = fetch + derive.** Fetch stores the raw Google response in
 `place.geocode_raw`; derive picks `city`/`admin1` from it via a priority fallback
 chain (`locality → postal_town → sublocality_1 → admin3 → admin2`), because no
-single Google field is "the city" worldwide. Retune the chain and re-run
-`track-me geocode --derive-only` to recompute names offline — **no API calls**.
+single Google field is "the city" worldwide. Chinese city names
+are then normalized (`placenames.normalize_cn_city`: drop a trailing separate "Shi",
+remove spaces/apostrophes, capitalize — "Cheng Du Shi"/"Xi'An" → "Chengdu"/"Xian"),
+and districts of the municipalities (Beijing/Shanghai/Tianjin/Chongqing, which Google
+puts in admin1) roll up to the municipality;
+city search matches either spelling, case-insensitively. Every `track-me geocode`
+run re-derives all places at the end (offline, **no API calls**), and runs
+`init_schema()` first (refreshing `home`), so rule or home changes apply on the
+next run; `--derive-only` does just the re-derive.
 
 ## Building travel timelines
 
@@ -118,8 +127,8 @@ MCP `get_trips` tool share one deterministic engine (`src/track_me/timeline.py`,
    running centroid into one stay, labelled by the most common `place.city`.
 
 6. Tag each stay `is_travel`: false when its centroid is within the home's
-   `radius_km` (100 mi) of the home active on the stay's first day; always true with
-   no active home (`home` is then null — a normal state, e.g. the roaming period). Computed at query time (never stored on `media`), so fixing a home
+   `radius_km` (200 mi for US homes, 200 km elsewhere) of the home active on the
+   stay's first day; always true with no active home (`home` is then null). Computed at query time (never stored on `media`), so fixing a home
    date needs no backfill. `--travel-only` / MCP `travel_only` hide non-travel stays.
 
 Output: chronological, **non-overlapping** date ranges (a revisited place appears

@@ -7,7 +7,9 @@ Two steps over H3-batched location cells:
      into the ``place`` table, and link each photo via ``media.geo_cell``.
   2. DERIVE (offline, free, re-runnable over stored raw): pick ``city``/``admin1``
      from the components with a priority fallback chain — no single Google field
-     is "the city" worldwide.
+     is "the city" worldwide — and normalize Chinese city names. Every ``geocode``
+     run re-derives all places at the end, so naming-rule changes apply on the
+     next run.
 
 Photos are grouped by a coarse H3 cell so each cell costs a single API call, and
 the result is shared by every photo in the cell (the ``place`` row).
@@ -26,6 +28,7 @@ import h3
 
 from track_me import config
 from track_me.db import Database, Place, now_utc
+from track_me.placenames import cn_municipality, normalize_cn_city
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +58,19 @@ def country_code_of(components: list[dict]) -> str | None:
 
 
 def derive_place(components: list[dict]) -> tuple[str | None, str | None]:
-    """(city, admin1) from Google address_components via the priority chain."""
+    """(city, admin1) from Google address_components via the priority chain.
+    Chinese city names are normalized ("Cheng Du Shi" -> "Chengdu") and districts of
+    Beijing/Shanghai/Tianjin/Chongqing roll up to the municipality; see
+    :mod:`track_me.placenames`."""
     city = None
     for type_name in CITY_TYPE_PRIORITY:
         city = _component(components, type_name)
         if city:
             break
     admin1 = _component(components, "administrative_area_level_1")
+    if country_code_of(components) == "CN":
+        # Municipalities (Shanghai …): locality is a district, admin1 is the city.
+        city = cn_municipality(admin1) or cn_municipality(city) or normalize_cn_city(city)
     return city, admin1
 
 
