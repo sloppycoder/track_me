@@ -112,8 +112,9 @@ def test_tag_travel_radius_and_no_home():
         {"from": "2019-06-09", "lat": 3.139, "lng": 101.687},  # KL, ~316 km
         {"from": "2024-06-01", "lat": 1.40, "lng": 103.9},  # SG but no home then
     ]
-    out = [s["is_travel"] for s in tl.tag_travel(stays, homes)]
-    assert out == [False, False, True, True]
+    tagged = tl.tag_travel(stays, homes)
+    assert [s["is_travel"] for s in tagged] == [False, False, True, True]
+    assert [s["home"] for s in tagged] == ["Singapore"] * 3 + [None]  # absent = roaming
 
 
 def test_build_stays_tags_and_filters(trip):

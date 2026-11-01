@@ -119,7 +119,7 @@ MCP `get_trips` tool share one deterministic engine (`src/track_me/timeline.py`,
 
 6. Tag each stay `is_travel`: false when its centroid is within the home's
    `radius_km` (100 mi) of the home active on the stay's first day; always true with
-   no active home. Computed at query time (never stored on `media`), so fixing a home
+   no active home (`home` is then null — a normal state, e.g. the roaming period). Computed at query time (never stored on `media`), so fixing a home
    date needs no backfill. `--travel-only` / MCP `travel_only` hide non-travel stays.
 
 Output: chronological, **non-overlapping** date ranges (a revisited place appears

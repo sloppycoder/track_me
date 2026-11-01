@@ -188,13 +188,17 @@ def city_stays(points: list[dict], *, merge_km: float = 50.0, min_hours: int = 2
 
 
 def tag_travel(stays: list[dict], homes: list[Home] | tuple[Home, ...]) -> list[dict]:
-    """Set ``is_travel`` on each stay (in place).
+    """Set ``home`` and ``is_travel`` on each stay (in place).
 
-    Travel = the stay's centroid is farther than the home's ``radius_km`` from the
-    home active on the stay's first day; with no active home it is always travel.
-    A stay is judged as a whole by its start date (it is not split at a move)."""
+    ``home`` is the label of the home active on the stay's first day, or ``None``.
+    Home can be ABSENT for whole periods (e.g. a roaming stretch with no base): that
+    is "no home then", not missing data. ``is_travel`` is true when the stay's
+    centroid is farther than the home's ``radius_km`` from that home, and always true
+    when there is no home. A stay is judged as a whole by its start date (it is not
+    split at a move)."""
     for s in stays:
         home = home_on(homes, s["from"])
+        s["home"] = home.label if home else None
         s["is_travel"] = (
             home is None
             or haversine_km(s["lat"], s["lng"], home.latitude, home.longitude) > home.radius_km

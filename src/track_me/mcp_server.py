@@ -57,6 +57,10 @@ to answer questions about the user's travels, trips and where they were when.
   find_places to get the exact spelling before filtering by city.
 - get_trips groups photos into contiguous stays (country or city level); a stay
   in the user's home country/city between trips is normal.
+- Each stay has `home` (where the user lived at that time) and `is_travel`. The user
+  has NOT always had a home: during some periods (e.g. a roaming stretch with no
+  base) `home` is null, and then every stay is `is_travel: true`. Null `home` means
+  "no home then", not missing data — do not read all of it as trips or holidays.
 - Each photo has a google_photos_url (opens the original in Google Photos) and a
   maps_url (opens the spot in Google Maps). Offer them as links when useful.
 """
@@ -174,7 +178,9 @@ def get_trips(
     travel_only: bool = False,
 ) -> dict:
     """Chronological, non-overlapping stays (the timeline engine, see timeline.py).
-    Each stay carries ``is_travel`` (False = within 100 mi of where you lived then)."""
+    Each stay carries ``home`` (label of where the user lived then, or None) and
+    ``is_travel`` (False = within 100 mi of that home). Home can be absent for some
+    periods; with no home, ``is_travel`` is always True."""
     # build_stays compares UTC taken_at against a half-open [start, end) range.
     end_exclusive = (date.fromisoformat(end_date) + timedelta(days=1)).isoformat()
     stays = tl.build_stays(
@@ -419,14 +425,19 @@ def create_server(auth: GoogleProvider | None = None) -> FastMCP:
             int, Field(ge=0, description="Absorb blips shorter than this between equal stays")
         ] = 24,
         travel_only: Annotated[
-            bool, Field(description="Only stays away from home (is_travel true)")
+            bool,
+            Field(
+                description="Only stays away from home (is_travel true); no-home periods count"
+            ),
         ] = False,
     ) -> dict:
         """The travel timeline for a window: chronological, non-overlapping stays
-        (label, from/to dates, centroid, photo count, sample photo link, is_travel).
-        is_travel is false for stays within 100 miles of where the user lived at the
-        time. Use level="country" for trips abroad, "city" for an itinerary;
-        travel_only=true to hide time at home."""
+        (label, from/to dates, centroid, photo count, sample photo link, home, is_travel).
+        home is where the user lived at the time; it can be null, because for some
+        periods the user had no home (roaming) — then is_travel is always true.
+        is_travel is false for stays within 100 miles of home. Use level="country"
+        for trips abroad, "city" for an itinerary; travel_only=true to hide time
+        at home."""
         with _open_db() as db:
             return get_trips(
                 db,
