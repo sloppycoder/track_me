@@ -66,7 +66,7 @@ Three tables (`src/track_me/db.py`); `home` is described after the first two:
 
 - **`home`** — dated home locations (`Home` dataclass), hard-coded in
   `db.HOME_SEED` and rewritten into the table by `init_schema()`. Inclusive
-  `valid_from`/`valid_to`; a gap between rows (the 2024-04-04..2026-11-25 "roaming"
+  `valid_from`/`valid_to`; a gap between rows (the 2024-04-05..2026-11-25 "roaming"
   period) means no home. `Database.homes()` falls back to `HOME_SEED` if the table is
   missing (old read-only catalogs).
 

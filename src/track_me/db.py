@@ -47,7 +47,7 @@ class Home:
         return self.valid_from <= day and (self.valid_to is None or day <= self.valid_to)
 
 
-# Source of truth for home periods. Gaps (e.g. 2024-04-04..2026-11-25, "roaming")
+# Source of truth for home periods. Gaps (e.g. 2024-04-05..2026-11-25, "roaming")
 # are intentional: with no home, every stay is travel. Dates were fixed from photo
 # metadata and the owner's recollection; edit here and re-run init_schema.
 HOME_SEED: tuple[Home, ...] = (
@@ -58,7 +58,7 @@ HOME_SEED: tuple[Home, ...] = (
     Home("Kuala Lumpur, MY", 3.1390, 101.6869, "2013-07-14", "2016-09-18"),
     Home("Singapore, SG", 1.3521, 103.8198, "2016-09-19", "2017-11-01"),
     Home("Kuala Lumpur, MY", 3.1390, 101.6869, "2017-11-02", "2019-01-27"),
-    Home("Singapore, SG", 1.3521, 103.8198, "2019-01-28", "2024-04-03"),
+    Home("Singapore, SG", 1.3521, 103.8198, "2019-01-28", "2024-04-04"),
     Home("Bellingham, WA", 48.7519, -122.4787, "2026-11-26", "2027-06-30"),
 )
 

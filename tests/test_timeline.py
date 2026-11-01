@@ -89,8 +89,8 @@ def test_home_on_boundaries_and_roaming_gap():
     assert _label("1998-04-11") == "San Jose, CA"
     assert _label("2005-10-09") == "San Jose, CA"
     assert _label("2005-10-10") == "Beijing, CN"
-    assert _label("2024-04-03") == "Singapore, SG"
-    assert _label("2024-04-04") is None  # roaming
+    assert _label("2024-04-04") == "Singapore, SG"
+    assert _label("2024-04-05") is None  # roaming
     assert _label("2026-11-25") is None
     assert _label("2026-11-26") == "Bellingham, WA"
     assert _label("2027-06-30") == "Bellingham, WA"
@@ -105,7 +105,7 @@ def test_init_schema_seeds_home_table(db):
 
 
 def test_tag_travel_radius_and_no_home():
-    homes = [Home("Singapore", 1.3521, 103.8198, "2019-01-28", "2024-04-03")]
+    homes = [Home("Singapore", 1.3521, 103.8198, "2019-01-28", "2024-04-04")]
     stays = [
         {"from": "2019-06-01", "lat": 1.40, "lng": 103.9},  # in SG
         {"from": "2019-06-05", "lat": 1.49, "lng": 103.74},  # Johor Bahru, ~20 km
