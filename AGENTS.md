@@ -15,6 +15,7 @@ src/track_me/
   storage.py     # object-store abstraction: LocalStore / S3Store (+ from_uri)
   ingest/        # exif, sidecar, matcher, pipeline (parallel, over the store)
   geocode.py     # reverse-geocoding (fetch + derive)
+  placenames.py  # place-name normalization (Chinese "Cheng Du Shi" -> "Chengdu")
   timeline.py    # build travel timelines from the catalog
   export.py      # GPX / GeoJSON export
   thumbnails.py  # opt-in thumbnail cache
@@ -99,8 +100,13 @@ and a moved location resets `media.geo_cell` so incremental `geocode` re-links i
 **Geocode = fetch + derive.** Fetch stores the raw Google response in
 `place.geocode_raw`; derive picks `city`/`admin1` from it via a priority fallback
 chain (`locality → postal_town → sublocality_1 → admin3 → admin2`), because no
-single Google field is "the city" worldwide. Retune the chain and re-run
-`track-me geocode --derive-only` to recompute names offline — **no API calls**.
+single Google field is "the city" worldwide. Chinese city names
+are then normalized (`placenames.normalize_cn_city`: drop a trailing separate "Shi",
+remove spaces/apostrophes, capitalize — "Cheng Du Shi"/"Xi'An" → "Chengdu"/"Xian");
+city search matches either spelling, case-insensitively. Every `track-me geocode`
+run re-derives all places at the end (offline, **no API calls**), and runs
+`init_schema()` first (refreshing `home`), so rule or home changes apply on the
+next run; `--derive-only` does just the re-derive.
 
 ## Building travel timelines
 

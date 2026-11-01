@@ -170,3 +170,32 @@ def test_derive_only_recomputes_offline(db, geocoder):
 def test_derive_place_priority_chain(components, expected_city):
     city, _admin1 = derive_place(components)
     assert city == expected_city
+
+
+def test_derive_place_normalizes_chinese_cities_only():
+    cn = [
+        {"types": ["locality"], "long_name": "Cheng Du Shi"},
+        {"types": ["country"], "short_name": "CN"},
+    ]
+    assert derive_place(cn)[0] == "Chengdu"
+    tw = [  # same text outside CN is left alone
+        {"types": ["locality"], "long_name": "Cheng Du Shi"},
+        {"types": ["country"], "short_name": "TW"},
+    ]
+    assert derive_place(tw)[0] == "Cheng Du Shi"
+
+
+def test_derive_all_rewrites_stored_chinese_names(db, geocoder):
+    for cell, name in [("c1", "Cheng Du Shi"), ("c2", "Chengdu")]:
+        db.upsert_place(
+            Place(
+                h3_cell=cell,
+                city=name,  # as stored by an older derive
+                geocode_raw=[
+                    {"types": ["locality"], "long_name": name},
+                    {"types": ["country"], "short_name": "CN"},
+                ],
+            )
+        )
+    geocoder.derive_all(redo=True)
+    assert {db.get_place(c).city for c in ("c1", "c2")} == {"Chengdu"}

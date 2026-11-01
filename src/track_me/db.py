@@ -20,6 +20,8 @@ from zoneinfo import ZoneInfo
 
 import h3
 
+from track_me.placenames import city_query_variants
+
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
 # res-11 H3 cell persisted per photo; coarser cells derived with cell_to_parent.
@@ -602,24 +604,33 @@ class Database:
             sql += "AND p.country_code = ? "
             params.append(country.upper())
         if city:
-            sql += "AND (p.city = ? COLLATE NOCASE OR p.admin1 = ? COLLATE NOCASE) "
-            params.extend([city, city])
+            names = city_query_variants(city)  # "Cheng Du Shi" also finds "Chengdu"
+            marks = ", ".join("?" * len(names))
+            sql += (
+                f"AND (p.city COLLATE NOCASE IN ({marks}) "
+                f"OR p.admin1 COLLATE NOCASE IN ({marks})) "
+            )
+            params.extend(names * 2)
         sql += "ORDER BY m.taken_at"
         return [dict(r) for r in self.conn.execute(sql, params)]
 
     def search_places(self, text: str, limit: int = 25) -> list[dict]:
         """Place names (city/admin1/address) containing ``text``, with the photo
         count and local-date span of each (city, admin1, country) group."""
-        like = f"%{text}%"
+        likes = [f"%{t}%" for t in city_query_variants(text)]
+        where = " OR ".join(
+            "p.city LIKE ? OR p.admin1 LIKE ? OR p.formatted_address LIKE ?" for _ in likes
+        )
         sql = (
             "SELECT p.city, p.admin1, p.country_code, COUNT(m.id) AS photo_count, "
             "MIN(m.local_date) AS first_date, MAX(m.local_date) AS last_date "
             "FROM place p JOIN media m ON m.geo_cell = p.h3_cell "
-            "WHERE p.city LIKE ? OR p.admin1 LIKE ? OR p.formatted_address LIKE ? "
+            f"WHERE {where} "
             "GROUP BY p.city, p.admin1, p.country_code "
             "ORDER BY photo_count DESC LIMIT ?"
         )
-        return [dict(r) for r in self.conn.execute(sql, (like, like, like, limit))]
+        params = [like for like in likes for _ in range(3)] + [limit]
+        return [dict(r) for r in self.conn.execute(sql, params)]
 
     def catalog_summary(self) -> dict:
         """Overall counts, the local-date span, and photo counts per country."""
