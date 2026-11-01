@@ -16,7 +16,7 @@ from collections import Counter
 from datetime import timedelta
 
 from track_me import config
-from track_me.db import Database, from_iso
+from track_me.db import HOME_SEED, Database, Home, from_iso, home_on
 
 
 # --------------------------------------------------------------------------- #
@@ -187,12 +187,28 @@ def city_stays(points: list[dict], *, merge_km: float = 50.0, min_hours: int = 2
     return [_stay_from_run(r["pts"], r["key"]) for r in runs]
 
 
+def tag_travel(stays: list[dict], homes: list[Home] | tuple[Home, ...]) -> list[dict]:
+    """Set ``is_travel`` on each stay (in place).
+
+    Travel = the stay's centroid is farther than the home's ``radius_km`` from the
+    home active on the stay's first day; with no active home it is always travel.
+    A stay is judged as a whole by its start date (it is not split at a move)."""
+    for s in stays:
+        home = home_on(homes, s["from"])
+        s["is_travel"] = (
+            home is None
+            or haversine_km(s["lat"], s["lng"], home.latitude, home.longitude) > home.radius_km
+        )
+    return stays
+
+
 def preview(stays: list[dict]) -> str:
     """Human-readable table for showing a draft before writing."""
     lines = [f"{len(stays)} stays:"]
     for i, s in enumerate(stays, 1):
         rng = s["from"] if s["from"] == s["to"] else f"{s['from']}..{s['to']}"
-        lines.append(f"  {i:>2}. {rng:<24} {s['label']:<28} ({s['photo_count']} photos)")
+        tag = "" if s.get("is_travel", True) else "  [home]"
+        lines.append(f"  {i:>2}. {rng:<24} {s['label']:<28} ({s['photo_count']} photos){tag}")
     return "\n".join(lines)
 
 
@@ -206,13 +222,18 @@ def build_stays(
     min_hours: int = 24,
     db: Database | None = None,
     points: list[dict] | None = None,
+    travel_only: bool = False,
 ) -> list[dict]:
-    """Convenience: load + segment at the requested granularity.
+    """Convenience: load + segment at the requested granularity, tagging each stay
+    ``is_travel`` against the home periods (``travel_only`` drops the rest).
 
     Pass ``points`` (from :func:`load_points`) to reuse an already-loaded set
     instead of querying again — the CLI does this so it can also embed them."""
     if points is None:
         points = load_points(start, end, db=db, region=region)
     if level == "city":
-        return city_stays(points, merge_km=merge_km, min_hours=min_hours)
-    return country_stays(points, min_hours=min_hours)
+        stays = city_stays(points, merge_km=merge_km, min_hours=min_hours)
+    else:
+        stays = country_stays(points, min_hours=min_hours)
+    tag_travel(stays, db.homes() if db is not None else HOME_SEED)
+    return [s for s in stays if s["is_travel"]] if travel_only else stays

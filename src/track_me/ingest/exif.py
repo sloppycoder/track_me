@@ -53,7 +53,7 @@ def _jsonable(value):
     if hasattr(value, "numerator") and hasattr(value, "denominator"):
         try:
             return float(value)
-        except (ValueError, ZeroDivisionError):
+        except ValueError, ZeroDivisionError:
             return f"{value.numerator}/{value.denominator}"
     if isinstance(value, dict):
         return {k: _jsonable(v) for k, v in value.items()}

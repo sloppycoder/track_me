@@ -1,6 +1,8 @@
 -- track_me schema (Django-free). Recreate with db.init_schema().
--- Two tables: `place` (one row per geocoded location cell, shared across photos)
+-- Three tables: `place` (one row per geocoded location cell, shared across photos)
 -- and `media` (one row per photo/video). media.geo_cell -> place.h3_cell.
+-- `home` is a small hard-coded list of dated home locations (seeded from
+-- db.HOME_SEED by init_schema) used to flag stays as travel / not travel.
 
 PRAGMA foreign_keys = ON;
 
@@ -72,3 +74,17 @@ CREATE INDEX IF NOT EXISTS idx_media_local_date ON media (local_date);
 CREATE INDEX IF NOT EXISTS idx_media_geo_cell   ON media (geo_cell);
 CREATE INDEX IF NOT EXISTS idx_media_h3_cell    ON media (h3_cell);
 CREATE INDEX IF NOT EXISTS idx_media_review     ON media (location_source, needs_review);
+
+-- Where the user lived, and when. Periods are inclusive ISO dates; valid_to NULL =
+-- open-ended. A gap between rows (e.g. a roaming period) means "no home", so every
+-- stay in it is travel. Rewritten from db.HOME_SEED by init_schema().
+CREATE TABLE IF NOT EXISTS home (
+    id         INTEGER PRIMARY KEY,
+    label      TEXT NOT NULL,
+    latitude   REAL NOT NULL,
+    longitude  REAL NOT NULL,
+    radius_km  REAL NOT NULL,   -- stays within this distance of home are not travel
+    valid_from TEXT NOT NULL,   -- 'YYYY-MM-DD', inclusive
+    valid_to   TEXT             -- 'YYYY-MM-DD', inclusive; NULL = still current
+);
+CREATE INDEX IF NOT EXISTS idx_home_valid ON home (valid_from, valid_to);

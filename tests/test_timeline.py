@@ -65,3 +65,68 @@ def test_date_window_excludes_outside(trip):
     # Only the 3 Thailand days fall in [06-03, 06-06).
     assert [s["label"] for s in stays] == ["TH"]
     assert stays[0]["photo_count"] == 3
+
+
+# --- home / is_travel -------------------------------------------------------
+from track_me.db import HOME_SEED, Home, home_on  # noqa: E402
+
+
+def test_home_seed_periods_are_ordered_and_disjoint():
+    prev_end = None
+    for h in HOME_SEED:
+        assert h.valid_to is None or h.valid_from <= h.valid_to
+        if prev_end:
+            assert prev_end < h.valid_from
+        prev_end = h.valid_to
+
+
+def _label(day):
+    h = home_on(HOME_SEED, day)
+    return h.label if h else None
+
+
+def test_home_on_boundaries_and_roaming_gap():
+    assert _label("1998-04-11") == "San Jose, CA"
+    assert _label("2005-10-09") == "San Jose, CA"
+    assert _label("2005-10-10") == "Beijing, CN"
+    assert _label("2024-04-03") == "Singapore, SG"
+    assert _label("2024-04-04") is None  # roaming
+    assert _label("2026-11-25") is None
+    assert _label("2026-11-26") == "Bellingham, WA"
+    assert _label("2027-06-30") == "Bellingham, WA"
+    assert _label("2027-07-01") is None
+    assert home_on(HOME_SEED, None) is None
+
+
+def test_init_schema_seeds_home_table(db):
+    assert db.homes() == list(HOME_SEED)
+    db.init_schema()  # re-runnable, no duplicates
+    assert len(db.homes()) == len(HOME_SEED)
+
+
+def test_tag_travel_radius_and_no_home():
+    homes = [Home("Singapore", 1.3521, 103.8198, "2019-01-28", "2024-04-03")]
+    stays = [
+        {"from": "2019-06-01", "lat": 1.40, "lng": 103.9},  # in SG
+        {"from": "2019-06-05", "lat": 1.49, "lng": 103.74},  # Johor Bahru, ~20 km
+        {"from": "2019-06-09", "lat": 3.139, "lng": 101.687},  # KL, ~316 km
+        {"from": "2024-06-01", "lat": 1.40, "lng": 103.9},  # SG but no home then
+    ]
+    out = [s["is_travel"] for s in tl.tag_travel(stays, homes)]
+    assert out == [False, False, True, True]
+
+
+def test_build_stays_tags_and_filters(trip):
+    # 2019-06: home is Singapore, so SG stays are home and Bangkok is travel.
+    stays = tl.build_stays("2019-06-01", "2019-06-30", level="country", db=trip)
+    assert {s["label"]: s["is_travel"] for s in stays} == {"SG": False, "TH": True}
+    away = tl.build_stays("2019-06-01", "2019-06-30", level="country", db=trip, travel_only=True)
+    assert [s["label"] for s in away] == ["TH"]
+
+
+def test_get_trips_travel_only(trip):
+    from track_me import mcp_server as ms
+
+    out = ms.get_trips(trip, start_date="2019-06-01", end_date="2019-06-09", travel_only=True)
+    assert [s["label"] for s in out["stays"]] == ["TH"]
+    assert all(s["is_travel"] for s in out["stays"])

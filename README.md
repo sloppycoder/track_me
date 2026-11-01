@@ -73,7 +73,7 @@ CLI …) as **read-only tools** — you ask in plain language, the model calls t
 | `catalog_overview` | date span, totals, photos per country |
 | `find_places` | exact stored spelling of a city/region ("Hà Nội") |
 | `find_photos` | photos by date / country / city / near a point (sampled, with links) |
-| `get_trips` | the travel timeline: country- or city-level stays |
+| `get_trips` | the travel timeline: country- or city-level stays, each flagged `is_travel` (`travel_only` hides time near home) |
 | `place_stats` | rank countries or cities by photos / days |
 | `busiest_days` | the days with the most photos in a window |
 

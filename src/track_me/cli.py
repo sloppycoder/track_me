@@ -149,6 +149,7 @@ def _cmd_timeline(args: argparse.Namespace) -> None:
         min_hours=args.min_hours,
         db=db,
         points=points,
+        travel_only=args.travel_only,
     )
     print(tl.preview(stays))
 
@@ -207,6 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_tl.add_argument("--region", nargs="*", help="restrict to these ISO country codes")
     p_tl.add_argument("--merge-km", type=float, default=50.0, help="city metro merge radius")
     p_tl.add_argument("--min-hours", type=int, default=24, help="blip-smoothing threshold")
+    p_tl.add_argument(
+        "--travel-only", action="store_true", help="hide stays within 100 mi of home"
+    )
     p_tl.set_defaults(func=_cmd_timeline)
 
     p_mcp = sub.add_parser("mcp", help="Serve read-only catalog tools to MCP chat clients")

@@ -26,6 +26,50 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 H3_BASE_RESOLUTION = 11
 
 
+# --------------------------------------------------------------------------- #
+# Home locations (hard-coded; see schema.sql `home`)                           #
+# --------------------------------------------------------------------------- #
+HOME_RADIUS_KM = 160.934  # 100 miles: a stay this close to home is not travel
+
+
+@dataclass(frozen=True)
+class Home:
+    """A place the user lived over an inclusive date range (``valid_to`` None = open)."""
+
+    label: str
+    latitude: float
+    longitude: float
+    valid_from: str
+    valid_to: str | None = None
+    radius_km: float = HOME_RADIUS_KM
+
+    def covers(self, day: str) -> bool:
+        return self.valid_from <= day and (self.valid_to is None or day <= self.valid_to)
+
+
+# Source of truth for home periods. Gaps (e.g. 2024-04-04..2026-11-25, "roaming")
+# are intentional: with no home, every stay is travel. Dates were fixed from photo
+# metadata and the owner's recollection; edit here and re-run init_schema.
+HOME_SEED: tuple[Home, ...] = (
+    Home("San Jose, CA", 37.3382, -121.8863, "1998-04-11", "2005-10-09"),
+    Home("Beijing, CN", 39.9042, 116.4074, "2005-10-10", "2007-01-17"),
+    Home("San Jose, CA", 37.3382, -121.8863, "2007-01-18", "2010-12-17"),
+    Home("Redmond, WA", 47.6740, -122.1215, "2010-12-18", "2013-07-13"),
+    Home("Kuala Lumpur, MY", 3.1390, 101.6869, "2013-07-14", "2016-09-18"),
+    Home("Singapore, SG", 1.3521, 103.8198, "2016-09-19", "2017-11-01"),
+    Home("Kuala Lumpur, MY", 3.1390, 101.6869, "2017-11-02", "2019-01-27"),
+    Home("Singapore, SG", 1.3521, 103.8198, "2019-01-28", "2024-04-03"),
+    Home("Bellingham, WA", 48.7519, -122.4787, "2026-11-26", "2027-06-30"),
+)
+
+
+def home_on(homes, day: str | None) -> Home | None:
+    """The home active on ISO date ``day``, or None (no home / unknown date)."""
+    if not day:
+        return None
+    return next((h for h in homes if h.covers(day)), None)
+
+
 # Enum-like string constants (values match the schema CHECK constraints). Plain
 # classes rather than Django TextChoices — no framework dependency.
 class MediaKind:
@@ -331,7 +375,38 @@ class Database:
 
     def init_schema(self) -> None:
         self.conn.executescript(SCHEMA_PATH.read_text())
+        self.conn.execute("DELETE FROM home")
+        self.conn.executemany(
+            "INSERT INTO home (label, latitude, longitude, radius_km, valid_from, valid_to) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (h.label, h.latitude, h.longitude, h.radius_km, h.valid_from, h.valid_to)
+                for h in HOME_SEED
+            ],
+        )
         self.conn.commit()
+
+    def homes(self) -> list[Home]:
+        """Home periods, oldest first. A catalog built before the ``home`` table
+        existed (read-only, never re-initialised) falls back to :data:`HOME_SEED`."""
+        try:
+            rows = self.conn.execute(
+                "SELECT label, latitude, longitude, radius_km, valid_from, valid_to "
+                "FROM home ORDER BY valid_from"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return list(HOME_SEED)
+        return [
+            Home(
+                r["label"],
+                r["latitude"],
+                r["longitude"],
+                r["valid_from"],
+                r["valid_to"],
+                r["radius_km"],
+            )
+            for r in rows
+        ] or list(HOME_SEED)
 
     # --- media -----------------------------------------------------------
     def get_media_by_dedupe_key(self, key: str) -> Media | None:

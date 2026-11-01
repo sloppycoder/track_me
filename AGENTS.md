@@ -54,7 +54,7 @@ Local **SQLite** at `userdata/track_me.db` (override with `DB_PATH`). The schema
 hand-authored in `src/track_me/schema.sql` and created on first use
 (`Database(...).init_schema()` runs `CREATE TABLE IF NOT EXISTS`) — no migrations.
 
-Two tables (`src/track_me/db.py`):
+Three tables (`src/track_me/db.py`); `home` is described after the first two:
 - **`media`** — one row per photo/video (`Media` dataclass). `taken_at` (ISO-8601
   UTC text), `local_date` (local-day bucket), `latitude`/`longitude`, `h3_cell`
   (res 11), `geo_cell` (FK → `place.h3_cell`, set at geocode time),
@@ -63,6 +63,12 @@ Two tables (`src/track_me/db.py`):
 - **`place`** — one row per geocoded H3 cell (`Place` dataclass), shared by every
   photo in the cell: `city`, `admin1`, `country_code`, `formatted_address`,
   `geocode_raw` (Google `address_components`), `geocoded_at`.
+
+- **`home`** — dated home locations (`Home` dataclass), hard-coded in
+  `db.HOME_SEED` and rewritten into the table by `init_schema()`. Inclusive
+  `valid_from`/`valid_to`; a gap between rows (the 2024-04-04..2026-11-25 "roaming"
+  period) means no home. `Database.homes()` falls back to `HOME_SEED` if the table is
+  missing (old read-only catalogs).
 
 All access goes through the `Database` repository (raw SQL, no ORM). Everything
 local — the DB and `thumbnails/` — lives under `userdata/` (gitignored).
@@ -110,6 +116,11 @@ MCP `get_trips` tool share one deterministic engine (`src/track_me/timeline.py`,
    then re-coalesce; repeat to a fixed point.
 5. City-level only: cluster consecutive photos within ~50 km (`--merge-km`) of a
    running centroid into one stay, labelled by the most common `place.city`.
+
+6. Tag each stay `is_travel`: false when its centroid is within the home's
+   `radius_km` (100 mi) of the home active on the stay's first day; always true with
+   no active home. Computed at query time (never stored on `media`), so fixing a home
+   date needs no backfill. `--travel-only` / MCP `travel_only` hide non-travel stays.
 
 Output: chronological, **non-overlapping** date ranges (a revisited place appears
 once per distinct visit).

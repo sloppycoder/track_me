@@ -171,8 +171,10 @@ def get_trips(
     country: str | None = None,
     merge_km: float = 50.0,
     min_hours: int = 24,
+    travel_only: bool = False,
 ) -> dict:
-    """Chronological, non-overlapping stays (the timeline engine, see timeline.py)."""
+    """Chronological, non-overlapping stays (the timeline engine, see timeline.py).
+    Each stay carries ``is_travel`` (False = within 100 mi of where you lived then)."""
     # build_stays compares UTC taken_at against a half-open [start, end) range.
     end_exclusive = (date.fromisoformat(end_date) + timedelta(days=1)).isoformat()
     stays = tl.build_stays(
@@ -183,6 +185,7 @@ def get_trips(
         merge_km=merge_km,
         min_hours=min_hours,
         db=db,
+        travel_only=travel_only,
     )
     for s in stays:
         s["maps_url"] = maps_url(s["lat"], s["lng"])
@@ -415,10 +418,15 @@ def create_server(auth: GoogleProvider | None = None) -> FastMCP:
         min_hours: Annotated[
             int, Field(ge=0, description="Absorb blips shorter than this between equal stays")
         ] = 24,
+        travel_only: Annotated[
+            bool, Field(description="Only stays away from home (is_travel true)")
+        ] = False,
     ) -> dict:
         """The travel timeline for a window: chronological, non-overlapping stays
-        (label, from/to dates, centroid, photo count, sample photo link). Use
-        level="country" for trips abroad, "city" for an itinerary."""
+        (label, from/to dates, centroid, photo count, sample photo link, is_travel).
+        is_travel is false for stays within 100 miles of where the user lived at the
+        time. Use level="country" for trips abroad, "city" for an itinerary;
+        travel_only=true to hide time at home."""
         with _open_db() as db:
             return get_trips(
                 db,
@@ -428,6 +436,7 @@ def create_server(auth: GoogleProvider | None = None) -> FastMCP:
                 country=country,
                 merge_km=merge_km,
                 min_hours=min_hours,
+                travel_only=travel_only,
             )
 
     @mcp.tool(name="place_stats", annotations=_READ_ONLY)

@@ -46,7 +46,7 @@ class TimeStamp(BaseModel):
             return None
         try:
             return int(self.timestamp)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return None
 
 
