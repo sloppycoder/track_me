@@ -102,7 +102,9 @@ and a moved location resets `media.geo_cell` so incremental `geocode` re-links i
 chain (`locality → postal_town → sublocality_1 → admin3 → admin2`), because no
 single Google field is "the city" worldwide. Chinese city names
 are then normalized (`placenames.normalize_cn_city`: drop a trailing separate "Shi",
-remove spaces/apostrophes, capitalize — "Cheng Du Shi"/"Xi'An" → "Chengdu"/"Xian");
+remove spaces/apostrophes, capitalize — "Cheng Du Shi"/"Xi'An" → "Chengdu"/"Xian"),
+and districts of the municipalities (Beijing/Shanghai/Tianjin/Chongqing, which Google
+puts in admin1) roll up to the municipality;
 city search matches either spelling, case-insensitively. Every `track-me geocode`
 run re-derives all places at the end (offline, **no API calls**), and runs
 `init_schema()` first (refreshing `home`), so rule or home changes apply on the

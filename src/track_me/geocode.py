@@ -28,7 +28,7 @@ import h3
 
 from track_me import config
 from track_me.db import Database, Place, now_utc
-from track_me.placenames import normalize_cn_city
+from track_me.placenames import cn_municipality, normalize_cn_city
 
 logger = logging.getLogger(__name__)
 
@@ -59,16 +59,18 @@ def country_code_of(components: list[dict]) -> str | None:
 
 def derive_place(components: list[dict]) -> tuple[str | None, str | None]:
     """(city, admin1) from Google address_components via the priority chain.
-    Chinese city names are normalized ("Cheng Du Shi" -> "Chengdu"); see
+    Chinese city names are normalized ("Cheng Du Shi" -> "Chengdu") and districts of
+    Beijing/Shanghai/Tianjin/Chongqing roll up to the municipality; see
     :mod:`track_me.placenames`."""
     city = None
     for type_name in CITY_TYPE_PRIORITY:
         city = _component(components, type_name)
         if city:
             break
-    if country_code_of(components) == "CN":
-        city = normalize_cn_city(city)
     admin1 = _component(components, "administrative_area_level_1")
+    if country_code_of(components) == "CN":
+        # Municipalities (Shanghai …): locality is a district, admin1 is the city.
+        city = cn_municipality(admin1) or cn_municipality(city) or normalize_cn_city(city)
     return city, admin1
 
 

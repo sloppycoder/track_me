@@ -199,3 +199,25 @@ def test_derive_all_rewrites_stored_chinese_names(db, geocoder):
         )
     geocoder.derive_all(redo=True)
     assert {db.get_place(c).city for c in ("c1", "c2")} == {"Chengdu"}
+
+
+@pytest.mark.parametrize(
+    "district, admin1, expected",
+    [
+        ("Xu Hui Qu", "Shang Hai Shi", "Shanghai"),
+        ("Pudong", "Shanghai", "Shanghai"),
+        ("Xuhui District", "Shanghai", "Shanghai"),
+        ("Yu Zhong Qu", "Chong Qing Shi", "Chongqing"),
+        ("Chao Yang Qu", "Bei Jing Shi", "Beijing"),
+        ("Guang Zhou Shi", "Guang Dong Sheng", "Guangzhou"),  # province: city kept
+    ],
+)
+def test_derive_place_rolls_municipality_districts_up(district, admin1, expected):
+    components = [
+        {"types": ["locality"], "long_name": district},
+        {"types": ["administrative_area_level_1"], "long_name": admin1},
+        {"types": ["country"], "short_name": "CN"},
+    ]
+    city, got_admin1 = derive_place(components)
+    assert city == expected
+    assert got_admin1 == admin1  # admin1 is stored as Google returned it

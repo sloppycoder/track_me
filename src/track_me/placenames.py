@@ -12,6 +12,11 @@ city Huangshi, written as one word, keeps its "shi"), remove spaces and
 apostrophes, then capitalize. Names that end in a district / county / prefecture /
 province marker ("Huang Pu Qu", "Xuhui District", "Da Li Bai Zu Zi Zhi Zhou") are
 left as-is: they are not cities, and squashing them would be unreadable.
+
+Municipalities (``cn_municipality``): Beijing, Shanghai, Tianjin and Chongqing are
+province-level cities, so Google puts the *city* in admin1 ("Shang Hai Shi") and a
+district in locality ("Xu Hui Qu", "Pudong"). Derive rolls those districts up to
+the municipality; the district stays in ``formatted_address``.
 """
 
 from __future__ import annotations
@@ -43,6 +48,25 @@ def normalize_cn_city(name: str | None) -> str | None:
         return name  # district / county / prefecture: leave readable
     squashed = "".join(words).replace("'", "")
     return squashed[:1].upper() + squashed[1:].lower()
+
+
+CN_MUNICIPALITIES = ("Beijing", "Shanghai", "Tianjin", "Chongqing")
+_CN_MUNICIPALITIES_HANZI = {
+    "北京": "Beijing",
+    "上海": "Shanghai",
+    "天津": "Tianjin",
+    "重庆": "Chongqing",
+}
+
+
+def cn_municipality(name: str | None) -> str | None:
+    """The municipality ("Shanghai" …) if ``name`` is one in any spelling
+    ("Shang Hai Shi", "Shanghai", "上海市"), else None."""
+    norm = normalize_cn_city(name)
+    if not norm:
+        return None
+    norm = _CN_MUNICIPALITIES_HANZI.get(norm, norm)
+    return norm if norm in CN_MUNICIPALITIES else None
 
 
 def city_query_variants(text: str) -> list[str]:

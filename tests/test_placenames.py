@@ -2,7 +2,7 @@
 
 import pytest
 
-from track_me.placenames import city_query_variants, normalize_cn_city
+from track_me.placenames import city_query_variants, cn_municipality, normalize_cn_city
 
 
 @pytest.mark.parametrize(
@@ -44,3 +44,22 @@ def test_city_query_variants():
     assert city_query_variants("Cheng Du Shi") == ["Cheng Du Shi", "Chengdu"]
     assert city_query_variants("chengdu") == ["chengdu"]  # NOCASE already covers it
     assert city_query_variants("Huang Pu Qu") == ["Huang Pu Qu"]
+
+
+@pytest.mark.parametrize(
+    "admin1, expected",
+    [
+        ("Shang Hai Shi", "Shanghai"),
+        ("Shanghai", "Shanghai"),
+        ("上海市", "Shanghai"),
+        ("Chong Qing Shi", "Chongqing"),
+        ("Chongqing", "Chongqing"),
+        ("Bei Jing Shi", "Beijing"),
+        ("Tian Jin Shi", "Tianjin"),
+        ("Guang Dong Sheng", None),  # a province, not a municipality
+        ("Si Chuan Sheng", None),
+        (None, None),
+    ],
+)
+def test_cn_municipality(admin1, expected):
+    assert cn_municipality(admin1) == expected
