@@ -55,7 +55,7 @@ Local **SQLite** at `userdata/track_me.db` (override with `DB_PATH`). The schema
 hand-authored in `src/track_me/schema.sql` and created on first use
 (`Database(...).init_schema()` runs `CREATE TABLE IF NOT EXISTS`) — no migrations.
 
-Three tables (`src/track_me/db.py`); `home` is described after the first two:
+Four tables (`src/track_me/db.py`); `home` and `change_log` are described after the first two:
 - **`media`** — one row per photo/video (`Media` dataclass). `taken_at` (ISO-8601
   UTC text), `local_date` (local-day bucket), `latitude`/`longitude`, `h3_cell`
   (res 11), `geo_cell` (FK → `place.h3_cell`, set at geocode time),
@@ -72,14 +72,22 @@ Three tables (`src/track_me/db.py`); `home` is described after the first two:
   homes use a 200 mi radius, others 200 km. `Database.homes()` falls back to `HOME_SEED` if the table is
   missing (old read-only catalogs).
 
+- **`change_log`** — git-log-style history of data changes: `id` (the catalog's
+  version), `at`, `command`, `summary`, `details` (JSON). A row is written
+  only when a command actually changed data (`ingest` wrote rows, `geocode` linked
+  photos / called the API / changed a derived name, `init_schema` rewrote `home`);
+  no-op runs write nothing. `Database.log_change()` / `recent_changes()`; the
+  `cli.log_ingest` / `log_geocode` helpers hold the "did anything change" rules. New
+  data-writing commands (e.g. the tagging app) must log too. View with `track-me log`.
+
 All access goes through the `Database` repository (raw SQL, no ORM). Everything
 local — the DB and `thumbnails/` — lives under `userdata/` (gitignored).
 
 ## CLI: `track-me`
 
 Single entrypoint (installed console script; also `uv run track-me ...`), source in
-`src/track_me/cli.py`. Five subcommands: `ingest · geocode · export · timeline ·
-mcp`. **The full command + flag reference lives in `README.md`** — don't
+`src/track_me/cli.py`. Six subcommands: `ingest · geocode · export · timeline ·
+log · mcp`. **The full command + flag reference lives in `README.md`** — don't
 duplicate it here (it drifts). Below is the behavior agents should know.
 
 Ingest and geocode are re-runnable/incremental (dedupe by `Media.dedupe_key`;

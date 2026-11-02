@@ -203,10 +203,12 @@ class Geocoder:
 
     # --- derive (offline, free) ------------------------------------------
     def derive_all(self, redo: bool = False) -> int:
-        """Recompute city/admin1 from stored geocode_raw. Returns rows updated."""
-        places = self.db.places_pending_derive(redo)
-        for p in places:
+        """Recompute city/admin1 from stored geocode_raw. Returns places that changed."""
+        changed = 0
+        for p in self.db.places_pending_derive(redo):
             raw = p.geocode_raw if isinstance(p.geocode_raw, list) else []
             city, admin1 = derive_place(raw)
-            self.db.update_place_derived(p.h3_cell, city, admin1)
-        return len(places)
+            if (city, admin1) != (p.city, p.admin1):
+                self.db.update_place_derived(p.h3_cell, city, admin1)
+                changed += 1
+        return changed

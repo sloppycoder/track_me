@@ -143,3 +143,26 @@ def _located(key: str, when: datetime, lat: float, lon: float) -> Media:
     m = Media(dedupe_key=key, file_name=f"{key}.jpg", taken_at=when)
     m.set_location(lat, lon, "exif_gps")
     return m
+
+
+# --- change log -------------------------------------------------------------
+def test_init_schema_logs_home_only_when_it_changes(db):
+    first = db.recent_changes()
+    assert [r["command"] for r in first] == ["init"]  # fixture's first init created the homes
+    db.init_schema()  # same homes -> nothing to record
+    assert len(db.recent_changes()) == 1
+    db.conn.execute("UPDATE home SET label = 'Elsewhere' WHERE id = 1")
+    db.conn.commit()
+    db.init_schema()  # drift is repaired and recorded
+    assert [r["summary"] for r in db.recent_changes()][0].startswith("home periods updated")
+
+
+def test_log_change_roundtrip_newest_first(db):
+    a = db.log_change("geocode", "geocode: 3 photos", {"linked": 3})
+    b = db.log_change("tag", "tag: 10 photos")
+    assert b == a + 1
+    rows = db.recent_changes(2)
+    assert [r["id"] for r in rows] == [b, a]
+    assert rows[1]["details"] == {"linked": 3}
+    assert rows[0]["details"] is None
+    assert rows[0]["at"].endswith("+00:00")

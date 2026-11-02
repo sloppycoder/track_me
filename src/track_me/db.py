@@ -416,16 +416,60 @@ class Database:
 
     def init_schema(self) -> None:
         self.conn.executescript(SCHEMA_PATH.read_text())
-        self.conn.execute("DELETE FROM home")
-        self.conn.executemany(
-            "INSERT INTO home (label, latitude, longitude, radius_km, valid_from, valid_to) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            [
-                (h.label, h.latitude, h.longitude, h.radius_km, h.valid_from, h.valid_to)
-                for h in HOME_SEED
-            ],
+        before = self._stored_homes()
+        if before != list(HOME_SEED):
+            self.conn.execute("DELETE FROM home")
+            self.conn.executemany(
+                "INSERT INTO home (label, latitude, longitude, radius_km, valid_from, valid_to) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (h.label, h.latitude, h.longitude, h.radius_km, h.valid_from, h.valid_to)
+                    for h in HOME_SEED
+                ],
+            )
+            self.conn.commit()
+            what = "created" if not before else "updated"
+            self.log_change("init", f"home periods {what} ({len(HOME_SEED)})")
+
+    def _stored_homes(self) -> list[Home]:
+        """Rows currently in the ``home`` table (no :data:`HOME_SEED` fallback)."""
+        rows = self.conn.execute(
+            "SELECT label, latitude, longitude, radius_km, valid_from, valid_to "
+            "FROM home ORDER BY valid_from"
+        ).fetchall()
+        return [
+            Home(
+                r["label"],
+                r["latitude"],
+                r["longitude"],
+                r["valid_from"],
+                r["valid_to"],
+                r["radius_km"],
+            )
+            for r in rows
+        ]
+
+    # --- change log (git-log style; only data-changing commands write) -----
+    def log_change(self, command: str, summary: str, details: dict | None = None) -> int:
+        """Append one history row and return its id (the catalog's new version)."""
+        cur = self.conn.execute(
+            "INSERT INTO change_log (at, command, summary, details) VALUES (?, ?, ?, ?)",
+            (now_utc().isoformat(), command, summary, json.dumps(details) if details else None),
         )
         self.conn.commit()
+        assert cur.lastrowid is not None
+        return cur.lastrowid
+
+    def recent_changes(self, limit: int = 20) -> list[dict]:
+        """Newest-first change history."""
+        rows = self.conn.execute(
+            "SELECT id, at, command, summary, details FROM change_log ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {**dict(r), "details": json.loads(r["details"]) if r["details"] else None}
+            for r in rows
+        ]
 
     def homes(self) -> list[Home]:
         """Home periods, oldest first. A catalog built before the ``home`` table

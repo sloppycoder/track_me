@@ -49,6 +49,11 @@ track-me geocode --derive-only    # recompute city/admin1 from stored responses
 
 # 3. EXPORT located media as a timestamped track for other timeline tools.
 track-me export [--format gpx|geojson] [--year YYYY] [--output FILE]
+
+# 4. LOG: history of data changes, newest first (like `git log`). Only commands that
+#    actually changed data write an entry, so a no-op ingest/geocode adds nothing.
+#    The latest `v<N>` is the catalog's version: compare it across copies of the DB.
+track-me log [-n 20]
 ```
 
 `ingest` and `geocode` are **re-runnable and incremental**: already-seen items

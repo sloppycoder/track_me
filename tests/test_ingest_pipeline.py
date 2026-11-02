@@ -357,3 +357,14 @@ def test_dedupe_key_stable_across_paths():
         file_size=999,
     )
     assert k1 == k2
+
+
+def test_log_ingest_only_when_rows_written(db):
+    from track_me.cli import log_ingest
+    from track_me.ingest.pipeline import IngestStats
+
+    before = len(db.recent_changes(100))
+    assert log_ingest(db, IngestStats(total_files=50, skipped=50)) is None
+    assert len(db.recent_changes(100)) == before
+    assert log_ingest(db, IngestStats(created=3, refreshed=1)) is not None
+    assert db.recent_changes(1)[0]["summary"].startswith("ingest: 3 new, 1 refreshed")

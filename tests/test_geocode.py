@@ -221,3 +221,26 @@ def test_derive_place_rolls_municipality_districts_up(district, admin1, expected
     city, got_admin1 = derive_place(components)
     assert city == expected
     assert got_admin1 == admin1  # admin1 is stored as Google returned it
+
+
+# --- change log hooks -------------------------------------------------------
+def test_derive_all_counts_only_changed_places(db, geocoder):
+    from track_me.cli import log_geocode
+    from track_me.geocode import GeocodeStats
+
+    db.upsert_place(
+        Place(
+            h3_cell="cell-9",
+            center_lat=1.0,
+            center_lng=1.0,
+            geocode_raw=[{"types": ["locality"], "long_name": "Lyon"}],
+        )
+    )
+    assert geocoder.derive_all(redo=True) == 1  # city filled in
+    assert geocoder.derive_all(redo=True) == 0  # nothing new to derive
+
+    before = len(db.recent_changes(100))
+    assert log_geocode(db, GeocodeStats(), derived=0) is None  # no-op run logs nothing
+    assert len(db.recent_changes(100)) == before
+    assert log_geocode(db, GeocodeStats(processed=5, api_calls=2), derived=1) is not None
+    assert db.recent_changes(1)[0]["command"] == "geocode"

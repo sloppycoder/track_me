@@ -6,6 +6,7 @@ A single entrypoint over the local SQLite pipeline:
     track-me geocode [--resolution 9] [--recalculate] [--estimate] [--derive-only]
     track-me export [--format gpx|geojson] [--output FILE] [--year Y]
     track-me timeline --start ISO --end ISO [--level country|city]
+    track-me log [-n N]                      # history of data changes (like git log)
     track-me mcp [--host H] [--port 8080] [--no-auth | --stdio]   # MCP server for chat clients
 """
 
@@ -31,6 +32,35 @@ def _parse_filter(raw: str | None) -> tuple[str, str] | None:
         if not re.fullmatch(r"\d{4}-\d{2}", ym):
             raise SystemExit(f"--filter expects YYYY-MM[,YYYY-MM]; got '{raw}'")
     return (min(lo, hi), max(lo, hi))
+
+
+def log_ingest(db, stats) -> int | None:
+    """Record an ingest in the change log, but only if it wrote rows."""
+    if not (stats.created or stats.updated or stats.refreshed):
+        return None
+    return db.log_change(
+        "ingest",
+        f"ingest: {stats.created} new, {stats.refreshed} refreshed, {stats.updated} updated",
+        {
+            "created": stats.created,
+            "refreshed": stats.refreshed,
+            "updated": stats.updated,
+            "skipped": stats.skipped,
+            "errors": stats.errors,
+        },
+    )
+
+
+def log_geocode(db, stats, derived: int) -> int | None:
+    """Record a geocode in the change log, but only if it changed rows."""
+    if not (stats.processed or stats.api_calls or derived):
+        return None
+    return db.log_change(
+        "geocode",
+        f"geocode: {stats.processed} photos linked, {stats.api_calls} API calls, "
+        f"{derived} places re-derived",
+        {"linked": stats.processed, "api_calls": stats.api_calls, "rederived": derived},
+    )
 
 
 def _cmd_ingest(args: argparse.Namespace) -> None:
@@ -67,6 +97,12 @@ def _cmd_ingest(args: argparse.Namespace) -> None:
             print(f"  {detail}", file=sys.stderr)
     print("=" * 60)
 
+    from track_me.db import Database
+
+    db = Database(config.DB_PATH)
+    if (version := log_ingest(db, stats)) is not None:
+        print(f"Data version: {version}")
+
 
 def _cmd_geocode(args: argparse.Namespace) -> None:
     from track_me.db import Database
@@ -91,7 +127,11 @@ def _cmd_geocode(args: argparse.Namespace) -> None:
     geocoder = Geocoder(db=db, api_key=args.api_key, progress_callback=print)
     if args.derive_only:
         n = geocoder.derive_all(redo=True)
-        print(f"Re-derived city/admin1 for {n} places (no API calls)")
+        print(f"Re-derived city/admin1: {n} places changed (no API calls)")
+        if n:
+            db.log_change(
+                "geocode", f"geocode --derive-only: {n} places re-derived", {"rederived": n}
+            )
         return
 
     try:
@@ -115,8 +155,10 @@ def _cmd_geocode(args: argparse.Namespace) -> None:
         print(f"Skipped (no result): {stats.skipped}")
     if stats.errors:
         print(f"Errors: {stats.errors}")
-    print(f"Re-derived city/admin1 for {derived} places (no API calls)")
+    print(f"Re-derived city/admin1: {derived} places changed (no API calls)")
     print("=" * 60)
+    if (version := log_geocode(db, stats, derived)) is not None:
+        print(f"Data version: {version}")
 
 
 def _cmd_export(args: argparse.Namespace) -> None:
@@ -159,6 +201,18 @@ def _cmd_timeline(args: argparse.Namespace) -> None:
     print(tl.preview(stays))
 
 
+def _cmd_log(args: argparse.Namespace) -> None:
+    from track_me.db import Database
+
+    db = Database(config.DB_PATH)
+    db.init_schema()
+    rows = db.recent_changes(args.n)
+    if not rows:
+        print("No changes recorded yet.")
+    for r in rows:
+        print(f"v{r['id']:<4} {r['at'][:19]}Z  {r['summary']}")
+
+
 def _cmd_mcp(args: argparse.Namespace) -> None:
     from track_me import mcp_server
 
@@ -199,6 +253,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Recompute city/admin1 from stored responses (offline, no API calls)",
     )
     p_geocode.set_defaults(func=_cmd_geocode)
+
+    p_log = sub.add_parser("log", help="Show the history of data changes (like git log)")
+    p_log.add_argument("-n", type=int, default=20, help="How many entries (default: 20)")
+    p_log.set_defaults(func=_cmd_log)
 
     p_export = sub.add_parser("export", help="Export located media as GPX/GeoJSON points")
     p_export.add_argument("--format", choices=["gpx", "geojson"], default="gpx")

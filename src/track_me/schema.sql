@@ -87,3 +87,14 @@ CREATE TABLE IF NOT EXISTS home (
     valid_to   TEXT             -- 'YYYY-MM-DD', inclusive; NULL = still current
 );
 CREATE INDEX IF NOT EXISTS idx_home_valid ON home (valid_from, valid_to);
+
+-- Git-log-style history of changes to the data: one row per command that actually
+-- changed something (a no-op ingest/geocode writes nothing). `id` doubles as the
+-- catalog's version, so two copies of the DB can be compared by their latest row.
+CREATE TABLE IF NOT EXISTS change_log (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    at      TEXT NOT NULL,      -- ISO-8601 UTC
+    command TEXT NOT NULL,      -- 'init' | 'ingest' | 'geocode' | 'tag' ...
+    summary TEXT NOT NULL,      -- one human-readable line
+    details TEXT                -- JSON: counts / flags
+);
