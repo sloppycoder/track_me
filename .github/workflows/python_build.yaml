@@ -19,6 +19,9 @@ env:
   GCP_PROJECT: vino9-276317
   GCP_REGION: us-west1 # "oregon"
   SERVICE_NAME: track-me
+  # Permanent public name (Cloud Run domain mapping, CNAME -> ghs.googlehosted.com).
+  # Advertised in OAuth metadata; Google redirect URI is MCP_BASE_URL/auth/callback.
+  MCP_BASE_URL: https://track-me.mcp.vino9.net
   AR_REPO: track-me # Artifact Registry repo (Docker format) in GCP_REGION
   GCS_BUCKET: vinolab # track_me/track_me.db (copied to /tmp at cold start) + OAuth state
 
@@ -93,30 +96,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # The server must know its own public URL (OAuth metadata + the Google
-      # redirect URI MCP_BASE_URL/auth/callback). Use the repo variable
-      # MCP_BASE_URL if set (e.g. a custom domain), else the service's existing
-      # run.app URL — stable across deploys of the same service name.
-      - name: Resolve public URL
-        id: url
-        env:
-          MCP_BASE_URL_OVERRIDE: ${{ vars.MCP_BASE_URL }}
-        run: |
-          URL="${MCP_BASE_URL_OVERRIDE}"
-          if [ -z "$URL" ]; then
-            URL=$(gcloud run services describe "${SERVICE_NAME}" \
-              --project="${GCP_PROJECT}" --region="${GCP_REGION}" \
-              --format='value(status.url)' 2>/dev/null || true)
-          fi
-          if [ -z "$URL" ]; then
-            echo "::error::No MCP_BASE_URL repo variable and no existing service URL" \
-              "— set vars.MCP_BASE_URL (see DEPLOY.md)."
-            exit 1
-          fi
-          URL="${URL%/}"
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
-          echo "::notice::MCP endpoint ${URL}/mcp — Google OAuth redirect URI ${URL}/auth/callback"
-
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "${SERVICE_NAME}" \
@@ -134,5 +113,19 @@ jobs:
             --service-account="${SERVICE_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
             --add-volume="name=userdata,type=cloud-storage,bucket=${GCS_BUCKET}" \
             --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
-            --set-env-vars="TRACKME_DB_URI=gs://${GCS_BUCKET}/track_me/track_me.db,FASTMCP_HOME=/mnt/gcs/track_me/mcp_oauth,MCP_BASE_URL=${{ steps.url.outputs.url }}" \
+            --set-env-vars="TRACKME_DB_URI=gs://${GCS_BUCKET}/track_me/track_me.db,FASTMCP_HOME=/mnt/gcs/track_me/mcp_oauth,MCP_BASE_URL=${MCP_BASE_URL}" \
             --set-secrets="GOOGLE_OAUTH_CLIENT_ID=my-mcp-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=my-mcp-oauth-client-secret:latest,MCP_ALLOWED_EMAILS=track-me-mcp-allowed-emails:latest"
+
+      # Idempotent: creates the Cloud Run domain mapping for the public name if it is
+      # missing (DNS: DNS-only CNAME track-me.mcp -> ghs.googlehosted.com, see DEPLOY.md).
+      - name: Ensure custom domain mapping
+        run: |
+          DOMAIN="${MCP_BASE_URL#https://}"
+          if gcloud beta run domain-mappings describe --domain="${DOMAIN}" \
+               --project="${GCP_PROJECT}" --region="${GCP_REGION}" >/dev/null 2>&1; then
+            echo "Domain mapping for ${DOMAIN} already exists"
+          else
+            gcloud beta run domain-mappings create --service="${SERVICE_NAME}" \
+              --domain="${DOMAIN}" --project="${GCP_PROJECT}" --region="${GCP_REGION}"
+          fi
+          echo "::notice::MCP endpoint ${MCP_BASE_URL}/mcp — Google OAuth redirect URI ${MCP_BASE_URL}/auth/callback"

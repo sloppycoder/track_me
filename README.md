@@ -118,7 +118,7 @@ Over HTTP (without `--no-auth`) the server requires **Google sign-in** and only
 admits the verified emails in `MCP_ALLOWED_EMAILS`. It needs `MCP_BASE_URL`,
 `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and `MCP_ALLOWED_EMAILS`
 (and `TRACKME_DB_URI=gs://bucket/key` to copy the catalog from GCS at startup) — see **`DEPLOY.md`**.
-Add it as a custom connector with the URL `https://<service>.run.app/mcp` and OAuth
+Add it as a custom connector with the URL `https://track-me.mcp.vino9.net/mcp` and OAuth
 authentication; the client walks you through the Google sign-in. See below for which
 clients can do this.
 

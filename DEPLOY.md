@@ -32,7 +32,7 @@ Placeholders used below (substitute your own):
 | `<PROJECT_NUM>` | GCP project number (`gcloud projects describe <PROJECT_ID> --format='value(projectNumber)'`) |
 | `<DATA_BUCKET>` | GCS bucket holding the runtime DB + OAuth state |
 | `<OWNER>/<REPO>` | the GitHub repo allowed to deploy |
-| `<SERVICE_URL>` | the service's public URL, e.g. `https://track-me-<PROJECT_NUM>.us-west1.run.app` |
+| `<SERVICE_URL>` | the permanent public URL, `https://track-me.mcp.vino9.net` (hard-coded as `MCP_BASE_URL` in the workflow) |
 
 ## Identity
 
@@ -52,20 +52,22 @@ repo `track-me` in `us-west1`.
 
 ## Remaining one-time steps
 
-### 1. Find the service URL
+### 1. Map the custom domain
 
 The server must know its public URL: it is advertised in the OAuth metadata and
-the Google redirect URI is `<SERVICE_URL>/auth/callback`. The workflow resolves
-it on every deploy:
+the Google redirect URI is `<SERVICE_URL>/auth/callback`. That URL is the hard-coded
+`MCP_BASE_URL` in the workflow's `env:` block (`https://track-me.mcp.vino9.net`).
+Changing the name means editing that line, the DNS record and the OAuth client.
 
-- the repo **variable** `MCP_BASE_URL` if set (**Settings → Secrets and
-  variables → Actions → Variables**) — use this for a custom domain, or
-- otherwise the existing `track-me` service's URL (`gcloud run services describe
-  track-me --region us-west1 --format='value(status.url)'`), which stays the same
-  across deploys. On the very first deploy no service exists yet, so set
-  `MCP_BASE_URL` to `https://track-me-<PROJECT_NUM>.us-west1.run.app`.
+```bash
+gcloud beta run domain-mappings create --service track-me \
+  --domain track-me.mcp.vino9.net --region us-west1 --project <PROJECT_ID>
+```
 
-The deploy job prints both the MCP endpoint and the redirect URI as a notice.
+Then add a DNS-only (not proxied) `CNAME track-me.mcp -> ghs.googlehosted.com.` in
+the `vino9.net` zone (Cloudflare: grey cloud, or Google can't issue the certificate).
+The domain must be verified in Search Console. Check progress with
+`gcloud beta run domain-mappings describe --domain track-me.mcp.vino9.net --region us-west1`.
 
 ### 2. Create the Google OAuth client
 
