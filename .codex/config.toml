@@ -11,3 +11,8 @@ args = [
 startup_timeout_sec = 30
 tool_timeout_sec = 120
 default_tools_approval_mode = "approve"
+
+[mcp_servers.track_me]
+command = "uv"
+args = ["run", "track-me", "mcp", "--stdio"]
+cwd = "/Users/lee/Projects/git/personal/track_me"
