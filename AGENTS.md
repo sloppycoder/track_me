@@ -110,7 +110,10 @@ and a moved location resets `media.geo_cell` so incremental `geocode` re-links i
 **Geocode = fetch + derive.** Fetch stores the raw Google response in
 `place.geocode_raw`; derive picks `city`/`admin1` from it via a priority fallback
 chain (`locality → postal_town → sublocality_1 → admin3 → admin2`), because no
-single Google field is "the city" worldwide. Chinese city names
+single Google field is "the city" worldwide. Components are merged across all of
+Google's results (the first is often a bare plus code in parks/rural areas), and a
+missing country (Google omits it for Jerusalem/West Bank) falls back by timezone
+(`geocode.COUNTRY_BY_TIMEZONE`: both → IL). Chinese city names
 are then normalized (`placenames.normalize_cn_city`: drop a trailing separate "Shi",
 remove spaces/apostrophes, capitalize — "Cheng Du Shi"/"Xi'An" → "Chengdu"/"Xian"),
 and districts of the municipalities (Beijing/Shanghai/Tianjin/Chongqing, which Google

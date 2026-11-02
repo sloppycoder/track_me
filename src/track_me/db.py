@@ -603,10 +603,18 @@ class Database:
             sql += "AND city IS NULL "
         return [_place_from_row(r) for r in self.conn.execute(sql)]
 
-    def update_place_derived(self, h3_cell: str, city: str | None, admin1: str | None) -> None:
+    def update_place_derived(
+        self,
+        h3_cell: str,
+        city: str | None,
+        admin1: str | None,
+        country_code: str | None = None,
+    ) -> None:
+        """Write derived names; ``country_code`` only when given (never cleared)."""
         self.conn.execute(
-            "UPDATE place SET city = ?, admin1 = ? WHERE h3_cell = ?",
-            (city, admin1, h3_cell),
+            "UPDATE place SET city = ?, admin1 = ?, country_code = COALESCE(?, country_code) "
+            "WHERE h3_cell = ?",
+            (city, admin1, country_code, h3_cell),
         )
         self.conn.commit()
 

@@ -3,7 +3,14 @@
 import pytest
 
 from track_me.db import Database, LocationSource, Media, Place
-from track_me.geocode import Geocoder, derive_place, estimate_calls
+from track_me.geocode import (
+    Geocoder,
+    country_code_of,
+    derive_place,
+    estimate_calls,
+    merge_components,
+    place_country,
+)
 
 
 def _fake_reverse_geocode(latlng, language=None):
@@ -244,3 +251,98 @@ def test_derive_all_counts_only_changed_places(db, geocoder):
     assert len(db.recent_changes(100)) == before
     assert log_geocode(db, GeocodeStats(processed=5, api_calls=2), derived=1) is not None
     assert db.recent_changes(1)[0]["command"] == "geocode"
+
+
+# --- multi-result merge + country fallback ----------------------------------
+_PLUS_CODE_FIRST = [  # shape of Google's answer in Yosemite: plus code first
+    {
+        "types": ["plus_code"],
+        "formatted_address": "VF76+R8 Yosemite Valley, CA, USA",
+        "address_components": [{"types": ["plus_code"], "long_name": "VF76+R8"}],
+    },
+    {
+        "types": ["establishment", "park"],
+        "formatted_address": "Yosemite National Park, California, USA",
+        "address_components": [
+            {"types": ["establishment", "park"], "long_name": "Yosemite National Park"},
+            {"types": ["administrative_area_level_1", "political"], "long_name": "California"},
+            {"types": ["country", "political"], "long_name": "USA", "short_name": "US"},
+        ],
+    },
+    {
+        "types": ["administrative_area_level_2", "political"],
+        "formatted_address": "Mariposa County, CA, USA",
+        "address_components": [
+            {
+                "types": ["administrative_area_level_2", "political"],
+                "long_name": "Mariposa County",
+            },
+            {"types": ["administrative_area_level_1", "political"], "long_name": "Calif."},
+            {"types": ["country", "political"], "long_name": "Mexico?", "short_name": "MX"},
+        ],
+    },
+]
+
+
+def test_merge_components_skips_plus_code_and_fills_gaps():
+    base, merged = merge_components(_PLUS_CODE_FIRST)
+    assert base["formatted_address"].startswith("Yosemite National Park")
+    assert country_code_of(merged) == "US"  # first-seen wins, later dupes ignored
+    assert derive_place(merged) == ("Mariposa County", "California")
+
+
+def test_merge_components_all_plus_code_keeps_first():
+    only = [_PLUS_CODE_FIRST[0]]
+    base, merged = merge_components(only)
+    assert base is only[0]
+    assert merged == only[0]["address_components"]
+
+
+def test_reverse_geocode_merges_results(geocoder):
+    geocoder._client = type(
+        "C", (), {"reverse_geocode": staticmethod(lambda *a, **k: _PLUS_CODE_FIRST)}
+    )
+    info = geocoder.reverse_geocode(37.865, -119.538)
+    assert info["country_code"] == "US"
+    assert info["formatted_address"] == "Yosemite National Park, California, USA"
+
+
+@pytest.mark.parametrize(
+    "lat, lng",
+    [
+        (31.7767, 35.2345),
+        (31.7054, 35.2024),
+    ],  # Jerusalem (Asia/Jerusalem), Bethlehem (Asia/Hebron)
+)
+def test_place_country_falls_back_to_israel(lat, lng):
+    components = [{"types": ["locality"], "long_name": "X"}]  # Google gave no country
+    assert place_country(components, lat, lng) == "IL"
+
+
+def test_place_country_prefers_google_and_ignores_other_zones():
+    google = [{"types": ["country"], "short_name": "PS"}]
+    assert place_country(google, 31.7054, 35.2024) == "PS"  # never overrides Google
+    assert place_country([], 35.68, 139.69) is None  # Tokyo: no fallback entry
+    assert place_country([], None, None) is None
+
+
+def test_derive_all_fills_missing_country(db, geocoder):
+    db.upsert_place(
+        Place(
+            h3_cell="bethlehem",
+            center_lat=31.7054,
+            center_lng=35.2024,
+            geocode_raw=[{"types": ["route"], "long_name": "Bethlehem-Beit Sahour"}],
+        )
+    )
+    assert geocoder.derive_all(redo=True) == 1
+    assert db.get_place("bethlehem").country_code == "IL"
+    assert geocoder.derive_all(redo=True) == 0  # stable on re-run
+
+
+def test_derive_place_translates_city_aliases():
+    components = [
+        {"types": ["locality", "political"], "long_name": "新加坡"},
+        {"types": ["country", "political"], "short_name": "SG"},
+    ]
+    assert derive_place(components)[0] == "Singapore"

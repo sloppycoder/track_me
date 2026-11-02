@@ -4,10 +4,12 @@ Two steps over H3-batched location cells:
 
   1. FETCH (Google, costs API — one call per new cell): store the cell's
      ``country_code``, ``formatted_address`` and the raw ``address_components``
-     into the ``place`` table, and link each photo via ``media.geo_cell``.
+     (merged across Google's results) into the ``place`` table, and link each
+     photo via ``media.geo_cell``.
   2. DERIVE (offline, free, re-runnable over stored raw): pick ``city``/``admin1``
      from the components with a priority fallback chain — no single Google field
-     is "the city" worldwide — and normalize Chinese city names. Every ``geocode``
+     is "the city" worldwide — and normalize Chinese city names. A country Google
+     left out (disputed areas) is filled from the cell's timezone. Every ``geocode``
      run re-derives all places at the end, so naming-rule changes apply on the
      next run.
 
@@ -29,6 +31,7 @@ import h3
 from track_me import config
 from track_me.db import Database, Place, now_utc
 from track_me.placenames import cn_municipality, normalize_cn_city
+from track_me.tz import timezone_for
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,9 @@ CITY_TYPE_PRIORITY = (
     "administrative_area_level_2",
 )
 
+# Exact city names Google sometimes returns untranslated despite language="en".
+CITY_ALIASES = {"新加坡": "Singapore"}
+
 
 def _component(components: list[dict], type_name: str, key: str = "long_name") -> str | None:
     for comp in components or []:
@@ -57,6 +63,47 @@ def country_code_of(components: list[dict]) -> str | None:
     return _component(components, "country", "short_name")
 
 
+# Where Google deliberately returns no ``country`` component (disputed areas), fall
+# back to the country of the cell's timezone. The user's call: Jerusalem and the
+# West Bank (Bethlehem, Efrat …) count as Israel.
+COUNTRY_BY_TIMEZONE = {
+    "Asia/Jerusalem": "IL",
+    "Asia/Hebron": "IL",
+}
+
+
+def place_country(components: list[dict], lat: float | None, lng: float | None) -> str | None:
+    """Google's country code, else the :data:`COUNTRY_BY_TIMEZONE` fallback."""
+    cc = country_code_of(components)
+    if cc or lat is None or lng is None:
+        return cc
+    return COUNTRY_BY_TIMEZONE.get(timezone_for(lat, lng) or "")
+
+
+def merge_components(results: list[dict]) -> tuple[dict, list[dict]]:
+    """(base result, merged components) from a Google reverse-geocode response.
+
+    The first result is often just a plus code in remote places (national parks,
+    rural areas), with the country/state/county only in later, coarser results.
+    Start from the first result that is not plus-code-only, then append components
+    from later results whose type isn't covered yet (``political`` is ignored, as
+    nearly every component carries it).
+    """
+    dicts = [r for r in results if isinstance(r, dict)]
+    base = next((r for r in dicts if r.get("types") != ["plus_code"]), dicts[0])
+    merged = list(base.get("address_components", []))
+    covered = {t for c in merged for t in c.get("types", []) if t != "political"}
+    for r in dicts:
+        if r is base:
+            continue
+        for comp in r.get("address_components", []):
+            types = {t for t in comp.get("types", []) if t != "political"}
+            if types and not types & covered:
+                merged.append(comp)
+                covered |= types
+    return base, merged
+
+
 def derive_place(components: list[dict]) -> tuple[str | None, str | None]:
     """(city, admin1) from Google address_components via the priority chain.
     Chinese city names are normalized ("Cheng Du Shi" -> "Chengdu") and districts of
@@ -67,6 +114,7 @@ def derive_place(components: list[dict]) -> tuple[str | None, str | None]:
         city = _component(components, type_name)
         if city:
             break
+    city = CITY_ALIASES.get(city or "", city)
     admin1 = _component(components, "administrative_area_level_1")
     if country_code_of(components) == "CN":
         # Municipalities (Shanghai …): locality is a district, admin1 is the city.
@@ -122,7 +170,10 @@ class Geocoder:
 
     # --- single lookup ---------------------------------------------------
     def reverse_geocode(self, lat: float, lon: float) -> dict | None:
-        """Return {'formatted_address', 'country_code', 'components'} or None."""
+        """Return {'formatted_address', 'country_code', 'components'} or None.
+
+        Components are merged across all results (see :func:`merge_components`).
+        """
         try:
             # googlemaps attaches API methods dynamically; static analysis can't see it.
             results = self.client.reverse_geocode((lat, lon), language="en")
@@ -131,13 +182,12 @@ class Geocoder:
             return None
         if not results or not isinstance(results, list):
             return None
-        first = results[0]
-        if not isinstance(first, dict):
+        if not any(isinstance(r, dict) for r in results):
             return None
-        components = first.get("address_components", [])
+        base, components = merge_components(results)
         return {
-            "formatted_address": first.get("formatted_address", ""),
-            "country_code": country_code_of(components),
+            "formatted_address": base.get("formatted_address", ""),
+            "country_code": place_country(components, lat, lon),
             "components": components,
         }
 
@@ -203,12 +253,14 @@ class Geocoder:
 
     # --- derive (offline, free) ------------------------------------------
     def derive_all(self, redo: bool = False) -> int:
-        """Recompute city/admin1 from stored geocode_raw. Returns places that changed."""
+        """Recompute city/admin1 (and a missing country, via the timezone fallback)
+        from stored geocode_raw. Returns places that changed."""
         changed = 0
         for p in self.db.places_pending_derive(redo):
             raw = p.geocode_raw if isinstance(p.geocode_raw, list) else []
             city, admin1 = derive_place(raw)
-            if (city, admin1) != (p.city, p.admin1):
-                self.db.update_place_derived(p.h3_cell, city, admin1)
+            cc = place_country(raw, p.center_lat, p.center_lng) or p.country_code
+            if (city, admin1, cc) != (p.city, p.admin1, p.country_code):
+                self.db.update_place_derived(p.h3_cell, city, admin1, cc)
                 changed += 1
         return changed
