@@ -7,6 +7,7 @@ A single entrypoint over the local SQLite pipeline:
     track-me export [--format gpx|geojson] [--output FILE] [--year Y]
     track-me timeline --start ISO --end ISO [--level country|city]
     track-me log [-n N]                      # history of data changes (like git log)
+    track-me tag [--db PATH] [--host H] [--port 8081]   # web app to tag old photos by hand
     track-me mcp [--host H] [--port 8080] [--no-auth | --stdio]   # MCP server for chat clients
 """
 
@@ -213,6 +214,20 @@ def _cmd_log(args: argparse.Namespace) -> None:
         print(f"v{r['id']:<4} {r['at'][:19]}Z  {r['summary']}")
 
 
+def _cmd_tag(args: argparse.Namespace) -> None:
+    from track_me import tagger
+    from track_me.db import Database
+
+    db_path = Path(args.db) if args.db else config.DB_PATH
+    if not db_path.is_file():
+        raise SystemExit(f"No catalog at {db_path} (use --db PATH)")
+    Database(db_path).init_schema()  # older catalogs gain change_log
+    print(f"Catalog:    {db_path}")
+    print(f"Thumbnails: {config.THUMBNAIL_CACHE_DIR}  (set THUMBNAIL_CACHE_DIR to change)")
+    print(f"Serving on  http://{args.host}:{args.port}  (no login: keep it on loopback)")
+    tagger.run(db_path=db_path, host=args.host, port=args.port)
+
+
 def _cmd_mcp(args: argparse.Namespace) -> None:
     from track_me import mcp_server
 
@@ -257,6 +272,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_log = sub.add_parser("log", help="Show the history of data changes (like git log)")
     p_log.add_argument("-n", type=int, default=20, help="How many entries (default: 20)")
     p_log.set_defaults(func=_cmd_log)
+
+    p_tag = sub.add_parser("tag", help="Web app: tag photos that have no location, by hand")
+    p_tag.add_argument("--db", help="Catalog path (default: DB_PATH / userdata/track_me.db)")
+    p_tag.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
+    p_tag.add_argument("--port", type=int, default=8081, help="Port (default: 8081)")
+    p_tag.set_defaults(func=_cmd_tag)
 
     p_export = sub.add_parser("export", help="Export located media as GPX/GeoJSON points")
     p_export.add_argument("--format", choices=["gpx", "geojson"], default="gpx")

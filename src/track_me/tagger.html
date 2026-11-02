@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tag photos</title>
+<style>
+  :root {
+    --bg: #fafafa; --fg: #1d1d1f; --muted: #6b6b70; --card: #ffffff; --line: #d9d9de;
+    --accent: #2457d6; --accent-fg: #ffffff; --drop: #e8eefc; --bad: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16161a; --fg: #ececf0; --muted: #9a9aa3; --card: #1f1f25; --line: #35353f;
+      --accent: #6d93f2; --accent-fg: #0d0d12; --drop: #232b45; --bad: #f2877f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 13px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; font-weight: 400; }
+  header { display: flex; align-items: center; gap: 12px; padding: 6px 12px;
+           border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { font-size: 14px; font-weight: 600; margin: 0; }
+  main { padding: 0 12px 32px; max-width: 1600px; margin: 0 auto; }
+  a { color: var(--accent); }
+  .muted { color: var(--muted); }
+  button { font: inherit; padding: 3px 9px; border-radius: 5px; cursor: pointer;
+           border: 1px solid var(--line); background: var(--card); color: var(--fg); }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  input { font: inherit; padding: 3px 8px; border-radius: 5px; color: var(--fg);
+          border: 1px solid var(--line); background: var(--card); }
+  #status { min-height: 1.2em; padding: 3px 0; }
+  #status.err { color: var(--bad); }
+
+  /* cluster page */
+  .range { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .cluster { display: flex; gap: 10px; align-items: center; padding: 6px 8px; margin: 4px 0;
+             border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+  .cluster .samples { display: flex; gap: 4px; }
+  .cluster .samples img { width: 60px; height: 40px; object-fit: cover; border-radius: 4px;
+                          background: var(--line); }
+  .cluster .info { flex: 1; min-width: 0; }
+  .cluster .dates { font-weight: 500; }
+
+  /* lanes page */
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 0; }
+  .toolbar .spacer { flex: 1; }
+  #pool-wrap { position: sticky; top: 0; z-index: 2; background: var(--bg);
+               max-height: 42vh; overflow: auto; padding-bottom: 4px; }
+  .lane { border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+          padding: 5px 6px; margin: 6px 0; min-height: 64px; }
+  .lane.over { background: var(--drop); border-color: var(--accent); }
+  .lane-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
+  .lane-head .title { font-weight: 500; }
+  .lane-head .spacer { flex: 1; }
+  .lane-head button { padding: 0 7px; }
+  .tiles { display: flex; flex-wrap: wrap; gap: 4px; min-height: 40px; }
+  .addlane { display: flex; gap: 6px; margin: 6px 0; }
+  .addlane input { flex: 1; min-width: 0; }
+
+  .tile { position: relative; width: 120px; height: 80px; border-radius: 3px;
+          border: 2px solid transparent; /* 3:2 like the 480x320 thumbnails */ background: var(--line); cursor: grab;
+          user-select: none; overflow: hidden; }
+  .tile.sel { border-color: var(--accent); }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile .cap { position: absolute; left: 0; bottom: 0; right: 0; padding: 1px 4px;
+               font-size: 10px; color: #fff; background: rgba(0,0,0,.55); }
+  .tile .orig { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px;
+                line-height: 18px; text-align: center; border-radius: 3px; font-size: 12px;
+                text-decoration: none; color: #fff; background: rgba(0,0,0,.55); }
+  .tile .orig:hover { background: rgba(0,0,0,.85); }
+  .tile.missing::after { content: "no thumbnail"; position: absolute; inset: 0; display: grid;
+                         place-items: center; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tag photos</h1>
+  <a id="back" href="#/" hidden>&larr; Date clusters</a>
+</header>
+<main>
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="view"></div>
+</main>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const h = (tag, props = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c);
+  return e;
+};
+async function api(path, body) {
+  const r = await fetch(path, body ? {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  } : undefined);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+// Per-viewer draft only; the page must work if storage is blocked.
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+function status(msg = "", isErr = false) {
+  const el = $("#status");
+  el.textContent = msg;
+  el.className = isErr ? "err" : "muted";
+}
+const thumbUrl = (key) => `/thumb/${key}`;
+const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
+
+/* ---------------------------------------------------------------- clusters */
+async function showClusters() {
+  $("#back").hidden = true;
+  status("Loading…");
+  const view = $("#view");
+  let data;
+  try { data = await api("/api/clusters"); }
+  catch (e) { return status(e.message, true); }
+  status();
+
+  const from = h("input", { type: "date" }), to = h("input", { type: "date" });
+  const open = () => {
+    if (!from.value || !to.value) return status("Pick both dates", true);
+    const [a, b] = from.value <= to.value ? [from.value, to.value] : [to.value, from.value];
+    location.hash = `#/range/${a}/${b}`;
+  };
+  const kids = [
+    h("p", { class: "muted",
+      text: `${plural(data.total, "untagged photo")} in ${plural(data.clusters.length, "date cluster")} ` +
+            `(a gap over ${data.gap_days} days starts a new one). Ranges larger than ` +
+            `${data.max_photos} load their first ${data.max_photos} photos.` }),
+    h("div", { class: "range" }, h("strong", { text: "Custom range" }), from, "to", to,
+      h("button", { text: "Open", onclick: open })),
+  ];
+  for (const c of data.clusters) {
+    const dates = c.start === c.end ? c.start : `${c.start} → ${c.end}`;
+    const big = c.count > data.max_photos ? ` · first ${data.max_photos} load` : "";
+    kids.push(h("div", { class: "cluster" },
+      h("div", { class: "samples" }, c.samples.map((k) => h("img", { src: thumbUrl(k), loading: "lazy", alt: "" }))),
+      h("div", { class: "info" },
+        h("div", { class: "dates", text: dates }),
+        h("div", { class: "muted", text: plural(c.count, "photo") + big })),
+      h("button", { class: "primary", text: "Open",
+        onclick: () => { location.hash = `#/range/${c.start}/${c.end}`; } })));
+  }
+  view.replaceChildren(...kids);
+}
+
+/* ------------------------------------------------------------------- lanes */
+let S = null;   // board state for the open range
+const newId = () => Math.random().toString(36).slice(2, 10);
+
+async function showLanes(start, end) {
+  $("#back").hidden = false;
+  status("Loading…");
+  let data;
+  try { data = await api(`/api/photos?start=${start}&end=${end}`); }
+  catch (e) { return status(e.message, true); }
+  status();
+
+  S = {
+    start, end, dkey: `tagdraft:${start}:${end}`, total: data.total, shown: data.shown,
+    photos: new Map(data.photos.map((p) => [p.key, p])), order: data.photos.map((p) => p.key),
+    lanes: [], assign: new Map(), sel: new Set(), last: null, els: new Map(),
+  };
+  const draft = store.get(S.dkey);          // restore an unsaved draft
+  if (draft) {
+    S.lanes = draft.lanes || [];
+    for (const [k, id] of draft.assign || [])
+      if (S.photos.has(k) && S.lanes.some((l) => l.id === id)) S.assign.set(k, id);
+  }
+  for (const p of data.photos) S.els.set(p.key, makeTile(p));
+  buildBoard();
+  renderBoard();
+}
+
+function makeTile(p) {
+  const img = h("img", { src: thumbUrl(p.key), loading: "lazy", draggable: "false", alt: "" });
+  const t = h("div", { class: "tile", draggable: "true", "data-key": p.key,
+                       title: `${p.name}\n${p.taken_at || ""}` },
+    img, h("span", { class: "cap", text: p.date }));
+  img.addEventListener("error", () => { img.remove(); t.classList.add("missing"); });
+  if (p.url) {                               // the original, in Google Photos
+    const a = h("a", { class: "orig", href: p.url, target: "_blank", rel: "noopener",
+                       title: "Open original in Google Photos", draggable: "false", text: "↗" });
+    a.addEventListener("click", (e) => e.stopPropagation());
+    t.append(a);
+    t.addEventListener("dblclick", () => window.open(p.url, "_blank", "noopener"));
+  }
+  t.addEventListener("click", (e) => selectTile(p.key, e));
+  t.addEventListener("dragstart", (e) => {
+    if (!S.sel.has(p.key)) { clearSelection(); setSelected(p.key, true); }
+    e.dataTransfer.setData("text/plain", String(S.sel.size));
+    e.dataTransfer.effectAllowed = "move";
+  });
+  return t;
+}
+function setSelected(key, on) {
+  on ? S.sel.add(key) : S.sel.delete(key);
+  S.els.get(key).classList.toggle("sel", on);
+}
+function clearSelection() { for (const k of [...S.sel]) setSelected(k, false); }
+function selectTile(key, e) {
+  if (e.shiftKey && S.last && S.last !== key) {      // range within the same lane
+    const keys = [...e.currentTarget.parentElement.children].map((el) => el.dataset.key);
+    const a = keys.indexOf(S.last), b = keys.indexOf(key);
+    if (a >= 0 && b >= 0) {
+      for (const k of keys.slice(Math.min(a, b), Math.max(a, b) + 1)) setSelected(k, true);
+      return updateCounts();
+    }
+  }
+  setSelected(key, !S.sel.has(key));
+  S.last = key;
+  updateCounts();
+}
+
+let poolEl, lanesEl, saveBtn, countEl, input, addBtn;
+function buildBoard() {
+  poolEl = h("div", { class: "tiles" });
+  lanesEl = h("div");
+  countEl = h("span", { class: "muted" });
+  saveBtn = h("button", { class: "primary", onclick: save });
+  input = h("input", { type: "text", placeholder: "Plus code (MP5W+C5 Minato City, Tokyo), lat, lng, or place name" });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") addLane(); });
+  addBtn = h("button", { text: "Add lane", onclick: addLane });
+
+  const pool = h("div", { class: "lane", id: "pool" },
+    h("div", { class: "lane-head" }, h("span", { class: "title", text: "Untagged" }),
+      h("span", { class: "muted", id: "poolcount" }), h("span", { class: "spacer" }),
+      h("button", { text: "Select all", onclick: () => { for (const k of poolKeys()) setSelected(k, true); updateCounts(); } }),
+      h("button", { text: "Clear", onclick: () => { clearSelection(); updateCounts(); } })),
+    poolEl);
+  makeDropTarget(pool, null);
+
+  const dates = S.start === S.end ? S.start : `${S.start} → ${S.end}`;
+  const more = S.total > S.shown
+    ? ` Saving loads the next batch (${(S.total - S.shown).toLocaleString()} more).` : "";
+  $("#view").replaceChildren(
+    h("div", { class: "toolbar" },
+      h("strong", { text: dates }),
+      h("span", { class: "muted", text: `showing ${S.shown.toLocaleString()} of ${S.total.toLocaleString()} untagged.${more}` }),
+      h("span", { class: "spacer" }), countEl, saveBtn),
+    h("div", { id: "pool-wrap" }, pool),
+    h("div", { class: "addlane" }, input, addBtn),
+    lanesEl);
+}
+function makeDropTarget(el, laneId) {
+  el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("over"); });
+  el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget)) el.classList.remove("over"); });
+  el.addEventListener("drop", (e) => { e.preventDefault(); el.classList.remove("over"); moveSelected(laneId); });
+}
+const poolKeys = () => S.order.filter((k) => !S.assign.has(k));
+const laneKeys = (id) => S.order.filter((k) => S.assign.get(k) === id);
+
+function moveSelected(laneId) {
+  for (const k of S.sel) laneId == null ? S.assign.delete(k) : S.assign.set(k, laneId);
+  clearSelection();
+  persist();
+  renderBoard();
+}
+function renderBoard() {
+  poolEl.replaceChildren(...poolKeys().map((k) => S.els.get(k)));
+  $("#poolcount").textContent = plural(poolKeys().length, "photo");
+  lanesEl.replaceChildren(...S.lanes.map((lane) => {
+    const tiles = h("div", { class: "tiles" }, laneKeys(lane.id).map((k) => S.els.get(k)));
+    const el = h("div", { class: "lane" },
+      h("div", { class: "lane-head" },
+        h("span", { class: "title", text: lane.label }),
+        h("a", { class: "muted", target: "_blank", rel: "noopener",
+                 href: `https://www.google.com/maps?q=${lane.lat},${lane.lng}`,
+                 text: `${lane.lat.toFixed(4)}, ${lane.lng.toFixed(4)}` }),
+        h("span", { class: "muted", text: plural(laneKeys(lane.id).length, "photo") }),
+        h("span", { class: "spacer" }),
+        h("button", { title: "Remove lane (photos go back to Untagged)", text: "×",
+          onclick: () => removeLane(lane.id) })),
+      tiles);
+    makeDropTarget(el, lane.id);
+    return el;
+  }));
+  updateCounts();
+}
+function updateCounts() {
+  const n = S.assign.size;
+  saveBtn.textContent = `Save ${plural(n, "tag")}`;
+  saveBtn.disabled = n === 0;
+  countEl.textContent = S.sel.size ? `${S.sel.size} selected` : "";
+}
+function persist() {
+  store.set(S.dkey, { lanes: S.lanes, assign: [...S.assign] });
+}
+function removeLane(id) {
+  S.lanes = S.lanes.filter((l) => l.id !== id);
+  for (const [k, l] of [...S.assign]) if (l === id) S.assign.delete(k);
+  persist();
+  renderBoard();
+}
+async function addLane() {
+  const q = input.value.trim();
+  if (!q) return;
+  addBtn.disabled = true;
+  status("Looking up…");
+  try {
+    const r = await api("/api/resolve", { query: q });
+    S.lanes.push({ id: newId(), label: r.label, lat: r.lat, lng: r.lng });
+    input.value = "";
+    persist();
+    renderBoard();
+    status();
+  } catch (e) { status(e.message, true); }
+  addBtn.disabled = false;
+}
+async function save() {
+  const lanes = S.lanes.map((l) => ({ label: l.label, lat: l.lat, lng: l.lng, keys: laneKeys(l.id) }))
+                       .filter((l) => l.keys.length);
+  if (!lanes.length) return;
+  const n = lanes.reduce((sum, l) => sum + l.keys.length, 0);
+  if (!confirm(`Save ${plural(n, "tag")} in ${plural(lanes.length, "place")}?\n\n` +
+               lanes.map((l) => `• ${l.label}: ${l.keys.length}`).join("\n"))) return;
+  saveBtn.disabled = true;
+  status("Saving…");
+  try {
+    const r = await api("/api/tags", { lanes });
+    store.del(S.dkey);
+    const skipped = r.skipped ? ` (${r.skipped} skipped: already located)` : "";
+    await showLanes(S.start, S.end);
+    status(`Saved ${plural(r.tagged, "photo")}${skipped}.`);
+  } catch (e) { status(e.message, true); saveBtn.disabled = false; }
+}
+
+/* ------------------------------------------------------------------ router */
+function route() {
+  const m = location.hash.match(/^#\/range\/(\d{4}-\d{2}-\d{2})\/(\d{4}-\d{2}-\d{2})$/);
+  m ? showLanes(m[1], m[2]) : showClusters();
+}
+addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>

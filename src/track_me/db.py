@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 import h3
 
 from track_me.placenames import city_query_variants
+from track_me.tz import timezone_for
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
@@ -596,6 +597,75 @@ class Database:
             (city, admin1, h3_cell),
         )
         self.conn.commit()
+
+    # --- manual tagging (tagging app) ------------------------------------
+    def untagged_day_counts(self) -> list[tuple[str, int]]:
+        """Photos with no location, counted per local day (videos have no thumbnail
+        to tag from, so they are left out)."""
+        rows = self.conn.execute(
+            "SELECT local_date, COUNT(*) AS n FROM media "
+            "WHERE latitude IS NULL AND kind = 'photo' AND local_date IS NOT NULL "
+            "GROUP BY local_date ORDER BY local_date"
+        )
+        return [(r["local_date"], r["n"]) for r in rows]
+
+    def count_untagged(self, start: str, end: str) -> int:
+        row = self.conn.execute(
+            "SELECT COUNT(*) AS n FROM media WHERE latitude IS NULL AND kind = 'photo' "
+            "AND local_date BETWEEN ? AND ?",
+            (start, end),
+        ).fetchone()
+        return row["n"]
+
+    def untagged_photos(self, start: str, end: str, limit: int) -> list[dict]:
+        """First ``limit`` untagged photos with local_date in [start, end], oldest first."""
+        rows = self.conn.execute(
+            "SELECT dedupe_key, local_date, taken_at, file_name, google_photos_url FROM media "
+            "WHERE latitude IS NULL AND kind = 'photo' AND local_date BETWEEN ? AND ? "
+            "ORDER BY local_date, taken_at, id LIMIT ?",
+            (start, end, limit),
+        )
+        return [dict(r) for r in rows]
+
+    def tag_manual(self, updates: list[tuple[str, float, float]]) -> int:
+        """Give photos a manual location, all in one transaction. ``updates`` is
+        ``(dedupe_key, lat, lng)``. Photos that already have a location are left alone
+        (a stale browser tab must not overwrite anything). Clears ``geo_cell`` so the
+        next ``geocode`` links the photo to a place, and re-buckets ``local_date`` in the
+        new location's timezone. Returns how many photos were tagged."""
+        now = to_iso(now_utc())
+        tagged = 0
+        try:
+            for key, lat, lng in updates:
+                row = self.conn.execute(
+                    "SELECT taken_at FROM media WHERE dedupe_key = ? AND latitude IS NULL",
+                    (key,),
+                ).fetchone()
+                if row is None:
+                    continue
+                tz = timezone_for(lat, lng)
+                local = local_date_for(from_iso(row["taken_at"]), tz)
+                self.conn.execute(
+                    "UPDATE media SET latitude = ?, longitude = ?, h3_cell = ?, geo_cell = NULL, "
+                    "location_source = ?, timezone = ?, local_date = COALESCE(?, local_date), "
+                    "needs_review = 0, updated_at = ? WHERE dedupe_key = ?",
+                    (
+                        float(lat),
+                        float(lng),
+                        h3.latlng_to_cell(lat, lng, H3_BASE_RESOLUTION),
+                        LocationSource.MANUAL,
+                        tz,
+                        local,
+                        now,
+                        key,
+                    ),
+                )
+                tagged += 1
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        return tagged
 
     # --- join (timeline / export) ---------------------------------------
     def located_with_place(self, year: int | None = None) -> list[dict]:

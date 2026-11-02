@@ -31,6 +31,13 @@ THUMBNAIL_SIZE = (
     int(os.getenv("THUMBNAIL_HEIGHT", "200")),
 )
 
+# --- tagging app (`track-me tag`) ---------------------------------------
+# Untagged photos are clustered by date: a gap of more than TAG_CLUSTER_GAP_DAYS
+# between photos starts a new cluster. A cluster (or custom range) bigger than
+# TAG_MAX_PHOTOS loads only its first TAG_MAX_PHOTOS photos.
+TAG_MAX_PHOTOS = int(os.getenv("TAG_MAX_PHOTOS", "300"))
+TAG_CLUSTER_GAP_DAYS = int(os.getenv("TAG_CLUSTER_GAP_DAYS", "14"))
+
 # --- ingest / geocode ----------------------------------------------------
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 

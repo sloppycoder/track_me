@@ -2,7 +2,8 @@
 
 Local-first tool that turns Google Takeout photo exports into a queryable travel
 timeline and serves it to chat clients over MCP. **No Django, no ORM, no web
-framework** — plain Python over local SQLite.
+framework** — plain Python over local SQLite. (The one web page, `track-me tag`, is bare
+Starlette — already installed via FastMCP — plus plain JS; don't add Flask/htmx.)
 
 All code is one package under `src/` (src-layout):
 
@@ -20,6 +21,7 @@ src/track_me/
   export.py      # GPX / GeoJSON export
   thumbnails.py  # opt-in thumbnail cache
   tz.py          # offline timezone lookup
+  tagger.py      # `track-me tag`: web app to tag GPS-less photos by hand (+ tagger.html)
   mcp_server.py  # MCP server: read-only catalog tools for chat clients (Google OAuth)
 ```
 
@@ -86,8 +88,8 @@ local — the DB and `thumbnails/` — lives under `userdata/` (gitignored).
 ## CLI: `track-me`
 
 Single entrypoint (installed console script; also `uv run track-me ...`), source in
-`src/track_me/cli.py`. Six subcommands: `ingest · geocode · export · timeline ·
-log · mcp`. **The full command + flag reference lives in `README.md`** — don't
+`src/track_me/cli.py`. Seven subcommands: `ingest · geocode · export · timeline ·
+log · tag · mcp`. **The full command + flag reference lives in `README.md`** — don't
 duplicate it here (it drifts). Below is the behavior agents should know.
 
 Ingest and geocode are re-runnable/incremental (dedupe by `Media.dedupe_key`;
@@ -117,6 +119,19 @@ city search matches either spelling, case-insensitively. Every `track-me geocode
 run re-derives all places at the end (offline, **no API calls**), and runs
 `init_schema()` first (refreshing `home`), so rule or home changes apply on the
 next run; `--derive-only` does just the re-derive.
+
+## Tagging app (`track-me tag`)
+
+`src/track_me/tagger.py` (Starlette, JSON endpoints; logic in plain functions tested in
+`tests/test_tagger.py`) + `tagger.html` (one page, plain JS). Page 1 clusters photos with
+no location by date (`TAG_CLUSTER_GAP_DAYS`), page 2 is the multi-lane board
+(`TAG_MAX_PHOTOS` per load). Lanes are a browser-side draft until Save, which calls
+`Database.tag_manual` — one transaction, sets `location_source='manual'`, clears
+`needs_review` and `geo_cell` (so `geocode` links it), re-buckets `local_date` in the new
+timezone, never touches a photo that already has a location — then one `tag`
+`change_log` row. Lane places resolve via the Google Geocoding API (plus codes and names)
+or offline for `lat, lng`. Thumbnails are read from `THUMBNAIL_CACHE_DIR` by 40-hex
+`dedupe_key` only. No auth: loopback by default, Cloudflare Access in front when exposed.
 
 ## Building travel timelines
 

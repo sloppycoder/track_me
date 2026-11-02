@@ -54,7 +54,27 @@ track-me export [--format gpx|geojson] [--year YYYY] [--output FILE]
 #    actually changed data write an entry, so a no-op ingest/geocode adds nothing.
 #    The latest `v<N>` is the catalog's version: compare it across copies of the DB.
 track-me log [-n 20]
+
+# 5. TAG photos that have no location (old GPS-less cameras) by hand, in a browser.
+#    Thumbnails come from THUMBNAIL_CACHE_DIR (made by `ingest --thumbnails`); a
+#    Google Maps API key in .env resolves plus codes / place names to coordinates.
+track-me tag [--db PATH] [--host 127.0.0.1] [--port 8081]
 ```
+
+### Tagging old photos
+
+`track-me tag` serves one page. First it clusters the untagged photos by date (a gap
+of more than `TAG_CLUSTER_GAP_DAYS`, default 14, starts a new cluster); pick a cluster
+or type a date range. Ranges bigger than `TAG_MAX_PHOTOS` (default 300) load their
+first batch only; saving loads the next one. On the board, **add a lane** by pasting a
+Google Maps plus code (e.g. `MP5W+C5 Minato City, Tokyo, Japan`), `lat, lng`, or a place
+name, then **drag photos into it** (click to select, shift-click for a range, a drag
+moves the whole selection). The ↗ on each photo opens the original in Google Photos.
+Nothing is written until **Save**: your lanes are kept as a draft in the browser and
+saved in one transaction as `location_source = 'manual'` (never overwritten by ingest
+or geocode), with one `tag` entry in `track-me log`. Run `track-me geocode` afterwards
+to link the new locations to place names. There is no login: it binds to loopback, so
+put an access proxy (e.g. Cloudflare Access) in front if you expose it.
 
 `ingest` and `geocode` are **re-runnable and incremental**: already-seen items
 (matched by `dedupe_key`) are skipped and manual edits are never overwritten.
