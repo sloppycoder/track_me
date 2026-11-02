@@ -69,6 +69,8 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
+        with:
+          install_components: beta # `beta run deploy --domain` maps the custom domain
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
@@ -98,7 +100,10 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy "${SERVICE_NAME}" \
+          # --domain creates the domain mapping if missing (DNS-only CNAME
+          # track-me.mcp -> ghs.googlehosted.com, see DEPLOY.md).
+          gcloud beta run deploy "${SERVICE_NAME}" \
+            --domain="${MCP_BASE_URL#https://}" \
             --project="${GCP_PROJECT}" \
             --region="${GCP_REGION}" \
             --image="${{ steps.meta.outputs.tag }}" \
@@ -115,17 +120,3 @@ jobs:
             --add-volume-mount="volume=userdata,mount-path=/mnt/gcs" \
             --set-env-vars="TRACKME_DB_URI=gs://${GCS_BUCKET}/track_me/track_me.db,FASTMCP_HOME=/mnt/gcs/track_me/mcp_oauth,MCP_BASE_URL=${MCP_BASE_URL}" \
             --set-secrets="GOOGLE_OAUTH_CLIENT_ID=my-mcp-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=my-mcp-oauth-client-secret:latest,MCP_ALLOWED_EMAILS=track-me-mcp-allowed-emails:latest"
-
-      # Idempotent: creates the Cloud Run domain mapping for the public name if it is
-      # missing (DNS: DNS-only CNAME track-me.mcp -> ghs.googlehosted.com, see DEPLOY.md).
-      - name: Ensure custom domain mapping
-        run: |
-          DOMAIN="${MCP_BASE_URL#https://}"
-          if gcloud beta run domain-mappings describe --domain="${DOMAIN}" \
-               --project="${GCP_PROJECT}" --region="${GCP_REGION}" >/dev/null 2>&1; then
-            echo "Domain mapping for ${DOMAIN} already exists"
-          else
-            gcloud beta run domain-mappings create --service="${SERVICE_NAME}" \
-              --domain="${DOMAIN}" --project="${GCP_PROJECT}" --region="${GCP_REGION}"
-          fi
-          echo "::notice::MCP endpoint ${MCP_BASE_URL}/mcp — Google OAuth redirect URI ${MCP_BASE_URL}/auth/callback"

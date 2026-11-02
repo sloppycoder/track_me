@@ -59,12 +59,10 @@ the Google redirect URI is `<SERVICE_URL>/auth/callback`. That URL is the hard-c
 `MCP_BASE_URL` in the workflow's `env:` block (`https://track-me.mcp.vino9.net`).
 Changing the name means editing that line, the DNS record and the OAuth client.
 
-```bash
-gcloud beta run domain-mappings create --service track-me \
-  --domain track-me.mcp.vino9.net --region us-west1 --project <PROJECT_ID>
-```
+The deploy step does this itself (`gcloud beta run deploy --domain=...` creates the
+mapping if it is missing), so there is nothing to run by hand.
 
-Then add a DNS-only (not proxied) `CNAME track-me.mcp -> ghs.googlehosted.com.` in
+Add a DNS-only (not proxied) `CNAME track-me.mcp -> ghs.googlehosted.com.` in
 the `vino9.net` zone (Cloudflare: grey cloud, or Google can't issue the certificate).
 The domain must be verified in Search Console. Check progress with
 `gcloud beta run domain-mappings describe --domain track-me.mcp.vino9.net --region us-west1`.
