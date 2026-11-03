@@ -57,7 +57,7 @@ Local **SQLite** at `userdata/track_me.db` (override with `DB_PATH`). The schema
 hand-authored in `src/track_me/schema.sql` and created on first use
 (`Database(...).init_schema()` runs `CREATE TABLE IF NOT EXISTS`) — no migrations.
 
-Four tables (`src/track_me/db.py`); `home` and `change_log` are described after the first two:
+Five tables (`src/track_me/db.py`); `home`, `change_log` and `tag_ignore` are described after the first two:
 - **`media`** — one row per photo/video (`Media` dataclass). `taken_at` (ISO-8601
   UTC text), `local_date` (local-day bucket), `latitude`/`longitude`, `h3_cell`
   (res 11), `geo_cell` (FK → `place.h3_cell`, set at geocode time),
@@ -81,6 +81,12 @@ Four tables (`src/track_me/db.py`); `home` and `change_log` are described after 
   no-op runs write nothing. `Database.log_change()` / `recent_changes()`; the
   `cli.log_ingest` / `log_geocode` helpers hold the "did anything change" rules. New
   data-writing commands (e.g. the tagging app) must log too. View with `track-me log`.
+
+- **`tag_ignore`** — `dedupe_key` + `ignored_at`: photos the user hid in the tagging
+  app (screenshots, scans …). Hidden **everywhere**: every media read query (tagger,
+  timeline, export, MCP) adds `Database._not_ignored()`, which is a no-op on old catalogs
+  without the table; new read queries must add it too. Ingest never touches it; delete a
+  row to un-hide.
 
 All access goes through the `Database` repository (raw SQL, no ORM). Everything
 local — the DB and `thumbnails/` — lives under `userdata/` (gitignored).
@@ -134,7 +140,10 @@ calls `Database.tag_manual(list[ManualEdit])` — one transaction; a place sets
 a date sets `taken_at` to 12:00 local (the place's timezone, else the photo's, else UTC)
 with `taken_at_source='manual'` (ingest preserves it); `local_date` is re-bucketed. A photo
 whose date is already manual keeps its day when a location is added later. It never touches
-a photo that already has a location. Then one `tag` `change_log` row. Placeholder dates
+a photo that already has a location or is ignored. Then one `tag` `change_log` row.
+The board's last lane, **Ignore**, writes its photos to `tag_ignore` on the same Save
+(`Database.ignore_photos`, after the 409 check, so a refused save writes nothing); there
+is no un-ignore UI. Placeholder dates
 (`TAG_GENERIC_DATES`, default 2000-12-31/2001-01-01 = the iPhone's "no date") re-date freely;
 re-dating any other date needs `confirm_overwrite` (the API answers 409 otherwise,
 `Database.trusted_dates`). The pool has client-side camera chips (`tagger.camera_label`: EXIF make/model, else prefix) plus a file-name-prefix box.

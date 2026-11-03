@@ -81,7 +81,10 @@ known file-name prefix, else the prefix itself) and a "name starts with" box fil
 Nothing is written until **Save**: your lanes are kept as a draft in the browser and
 saved in one transaction (`location_source = 'manual'` and/or `taken_at_source =
 'manual'`, never overwritten by ingest or geocode), with one `tag` entry in
-`track-me log`. Run `track-me geocode` afterwards to link new locations to place names;
+`track-me log`. Drop screenshots, scans and other photos that will never have a
+location into the **Ignore** lane at the bottom: on Save they go into the `tag_ignore`
+table and are hidden everywhere for good: the tagger, timelines, exports and the MCP
+tools (delete the row to bring one back). Run `track-me geocode` afterwards to link new locations to place names;
 dates need no follow-up, since trips are computed from the catalog at query time. There
 is no login: it binds to loopback, so put an access proxy (e.g. Cloudflare Access) in
 front if you expose it.

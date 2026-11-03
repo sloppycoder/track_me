@@ -557,7 +557,10 @@ class Database:
         """Located items with a timestamp, ordered by absolute UTC time.
 
         ``year`` filters on the photo's LOCAL year (via ``local_date``)."""
-        sql = "SELECT * FROM media WHERE latitude IS NOT NULL AND taken_at IS NOT NULL "
+        sql = (
+            "SELECT * FROM media WHERE latitude IS NOT NULL AND taken_at IS NOT NULL "
+            f"AND {self._not_ignored()} "
+        )
         params: list = []
         if year is not None:
             sql += "AND substr(local_date, 1, 4) = ? "
@@ -619,20 +622,34 @@ class Database:
         self.conn.commit()
 
     # --- manual tagging (tagging app) ------------------------------------
+    def _not_ignored(self, column: str = "dedupe_key") -> str:
+        """SQL condition: ``column`` is not in ``tag_ignore``. Ignored photos are hidden
+        everywhere (tagger, timeline, export, MCP), not just from tagging. A catalog
+        built before ``tag_ignore`` existed (read-only, never re-initialised) has
+        nothing ignored."""
+        exists = self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tag_ignore'"
+        ).fetchone()
+        return f"{column} NOT IN (SELECT dedupe_key FROM tag_ignore)" if exists else "1"
+
+    def _untagged(self) -> str:
+        """SQL condition for "untagged": a photo (videos have no thumbnail to tag from)
+        with no location that the user hasn't chosen to ignore (``tag_ignore``)."""
+        return f"latitude IS NULL AND kind = 'photo' AND {self._not_ignored()}"
+
     def untagged_day_counts(self) -> list[tuple[str, int]]:
-        """Photos with no location, counted per local day (videos have no thumbnail
-        to tag from, so they are left out)."""
+        """Untagged photos, counted per local day."""
         rows = self.conn.execute(
-            "SELECT local_date, COUNT(*) AS n FROM media "
-            "WHERE latitude IS NULL AND kind = 'photo' AND local_date IS NOT NULL "
-            "GROUP BY local_date ORDER BY local_date"
+            f"SELECT local_date, COUNT(*) AS n FROM media "
+            f"WHERE {self._untagged()} AND local_date IS NOT NULL "
+            f"GROUP BY local_date ORDER BY local_date"
         )
         return [(r["local_date"], r["n"]) for r in rows]
 
     def count_untagged(self, start: str, end: str) -> int:
         row = self.conn.execute(
-            "SELECT COUNT(*) AS n FROM media WHERE latitude IS NULL AND kind = 'photo' "
-            "AND local_date BETWEEN ? AND ?",
+            f"SELECT COUNT(*) AS n FROM media WHERE {self._untagged()} "
+            f"AND local_date BETWEEN ? AND ?",
             (start, end),
         ).fetchone()
         return row["n"]
@@ -643,7 +660,7 @@ class Database:
             "SELECT dedupe_key, local_date, taken_at, taken_at_source, file_name, "
             "google_photos_url, json_extract(exif, '$.Make') AS make, "
             "json_extract(exif, '$.Model') AS model FROM media "
-            "WHERE latitude IS NULL AND kind = 'photo' AND local_date BETWEEN ? AND ? "
+            f"WHERE {self._untagged()} AND local_date BETWEEN ? AND ? "
             "ORDER BY local_date, taken_at, id LIMIT ?",
             (start, end, limit),
         )
@@ -653,11 +670,12 @@ class Database:
         """Of the unlocated photos in ``keys``, those whose current date should be trusted:
         not a placeholder (``generic_dates``) and not already set by hand. Maps
         dedupe_key -> local_date. Re-dating these is what the tagger asks to confirm."""
+        untagged = self._untagged()
         out: dict[str, str] = {}
         for key in keys:
             row = self.conn.execute(
                 "SELECT local_date, taken_at_source FROM media "
-                "WHERE dedupe_key = ? AND latitude IS NULL",
+                f"WHERE dedupe_key = ? AND {untagged}",
                 (key,),
             ).fetchone()
             if row is None or row["local_date"] is None:
@@ -671,7 +689,8 @@ class Database:
         """Apply manual edits to photos with no location, all in one transaction.
 
         An edit may set a location, a capture date, or both. Photos that already have a
-        location are left alone (a stale browser tab must not overwrite anything).
+        location, or that the user ignored, are left alone (a stale browser tab must not
+        overwrite anything).
 
         - Location: clears ``geo_cell`` so the next ``geocode`` links the photo to a
           place, and the timezone becomes the new location's.
@@ -683,12 +702,13 @@ class Database:
 
         Returns the dedupe_keys that were changed."""
         now = to_iso(now_utc())
+        untagged = self._untagged()
         done: list[str] = []
         try:
             for e in edits:
                 row = self.conn.execute(
                     "SELECT taken_at, taken_at_source, timezone, local_date FROM media "
-                    "WHERE dedupe_key = ? AND latitude IS NULL",
+                    f"WHERE dedupe_key = ? AND {untagged}",
                     (e.key,),
                 ).fetchone()
                 if row is None:
@@ -729,6 +749,26 @@ class Database:
             raise
         return done
 
+    def ignore_photos(self, keys: list[str]) -> int:
+        """Hide photos from the tagging app (one transaction). Only photos that still
+        have no location are added; already-ignored ones are left as they were.
+        Returns how many were newly ignored."""
+        now = to_iso(now_utc())
+        try:
+            n = 0
+            for key in keys:
+                cur = self.conn.execute(
+                    "INSERT OR IGNORE INTO tag_ignore (dedupe_key, ignored_at) "
+                    "SELECT dedupe_key, ? FROM media WHERE dedupe_key = ? AND latitude IS NULL",
+                    (now, key),
+                )
+                n += cur.rowcount
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        return n
+
     # --- join (timeline / export) ---------------------------------------
     def located_with_place(self, year: int | None = None) -> list[dict]:
         """Located items joined to their place names, ordered by time.
@@ -739,6 +779,7 @@ class Database:
             "m.google_photos_url, p.city, p.admin1, p.country_code, p.formatted_address "
             "FROM media m LEFT JOIN place p ON m.geo_cell = p.h3_cell "
             "WHERE m.latitude IS NOT NULL AND m.taken_at IS NOT NULL "
+            f"AND {self._not_ignored('m.dedupe_key')} "
         )
         params: list = []
         if year is not None:
@@ -768,6 +809,7 @@ class Database:
             "p.city, p.admin1, p.country_code, p.formatted_address "
             "FROM media m LEFT JOIN place p ON m.geo_cell = p.h3_cell "
             "WHERE m.latitude IS NOT NULL AND m.taken_at IS NOT NULL "
+            f"AND {self._not_ignored('m.dedupe_key')} "
         )
         params: list = []
         if start_date:
@@ -801,7 +843,7 @@ class Database:
             "SELECT p.city, p.admin1, p.country_code, COUNT(m.id) AS photo_count, "
             "MIN(m.local_date) AS first_date, MAX(m.local_date) AS last_date "
             "FROM place p JOIN media m ON m.geo_cell = p.h3_cell "
-            f"WHERE {where} "
+            f"WHERE ({where}) AND {self._not_ignored('m.dedupe_key')} "
             "GROUP BY p.city, p.admin1, p.country_code "
             "ORDER BY photo_count DESC LIMIT ?"
         )
@@ -810,15 +852,17 @@ class Database:
 
     def catalog_summary(self) -> dict:
         """Overall counts, the local-date span, and photo counts per country."""
+        visible = self._not_ignored("m.dedupe_key")
         row = self.conn.execute(
             "SELECT COUNT(*) AS total, COUNT(latitude) AS located, "
-            "MIN(local_date) AS first_date, MAX(local_date) AS last_date FROM media"
+            "MIN(local_date) AS first_date, MAX(local_date) AS last_date FROM media m "
+            f"WHERE {visible}"
         ).fetchone()
         countries = self.conn.execute(
             "SELECT p.country_code, COUNT(*) AS photo_count, "
             "MIN(m.local_date) AS first_date, MAX(m.local_date) AS last_date "
             "FROM media m JOIN place p ON m.geo_cell = p.h3_cell "
-            "WHERE p.country_code IS NOT NULL "
+            f"WHERE p.country_code IS NOT NULL AND {visible} "
             "GROUP BY p.country_code ORDER BY photo_count DESC"
         ).fetchall()
         return {**dict(row), "countries": [dict(r) for r in countries]}

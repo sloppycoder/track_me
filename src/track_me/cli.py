@@ -221,7 +221,7 @@ def _cmd_tag(args: argparse.Namespace) -> None:
     db_path = Path(args.db) if args.db else config.DB_PATH
     if not db_path.is_file():
         raise SystemExit(f"No catalog at {db_path} (use --db PATH)")
-    Database(db_path).init_schema()  # older catalogs gain change_log
+    Database(db_path).init_schema()  # older catalogs gain change_log / tag_ignore
     print(f"Catalog:    {db_path}")
     print(f"Thumbnails: {config.THUMBNAIL_CACHE_DIR}  (set THUMBNAIL_CACHE_DIR to change)")
     print(f"Serving on  http://{args.host}:{args.port}  (no login: keep it on loopback)")

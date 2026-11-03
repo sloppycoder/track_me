@@ -5,8 +5,9 @@ One page (``tagger.html``) plus a few JSON endpoints, served by Starlette (alrea
 dependency of FastMCP). Page 1 clusters the untagged photos by date; page 2 is the
 multi-lane board. Lanes are only a draft in the browser until Save, which writes every
 edit in one transaction (``Database.tag_manual``) and records one ``change_log``
-entry. Thumbnails come from the cache directory written by ``track-me ingest
---thumbnails``.
+entry. The board's last lane is "Ignore": photos dropped there (screenshots, scans …)
+go into ``tag_ignore`` on Save and are hidden everywhere from then on. Thumbnails come
+from the cache directory written by ``track-me ingest --thumbnails``.
 
 There is no login here: bind to loopback and put an access proxy (Cloudflare Access)
 in front if it is exposed.
@@ -251,6 +252,9 @@ def create_app(
             body = await request.json()
             edits: list[ManualEdit] = []
             labels: list[str] = []
+            ignore = list(body.get("ignore", []))
+            if not all(isinstance(k, str) and KEY_RE.fullmatch(k) for k in ignore):
+                return _error("invalid photo key")
             for lane in body["lanes"]:
                 keys = lane["keys"]
                 if not all(isinstance(k, str) and KEY_RE.fullmatch(k) for k in keys):
@@ -273,15 +277,17 @@ def create_app(
         except ResolveError as e:
             return _error(str(e), 422)
         except Exception:
-            return _error('expected {"lanes": [{"lat", "lng", "date", "label", "keys"}]}')
-        if len(edits) > MAX_TAGS_PER_SAVE:
+            return _error(
+                'expected {"lanes": [{"lat", "lng", "date", "label", "keys"}], "ignore": []}'
+            )
+        if len(edits) + len(ignore) > MAX_TAGS_PER_SAVE:
             return _error("too many photos in one save", 413)
-        if not edits:
-            return JSONResponse({"tagged": 0, "skipped": 0})
+        if not edits and not ignore:
+            return JSONResponse({"tagged": 0, "ignored": 0, "skipped": 0})
 
         with open_db() as db:
             trusted = db.trusted_dates([e.key for e in edits if e.date], generic_dates)
-            if trusted and not confirm:
+            if trusted and not confirm:  # nothing is written, ignores included
                 return JSONResponse(
                     {
                         "error": f"{len(trusted)} photos already have a trusted date",
@@ -291,24 +297,34 @@ def create_app(
                     },
                     status_code=409,
                 )
-            done = set(db.tag_manual(edits))
-            if done:
+            done = set(db.tag_manual(edits)) if edits else set()
+            ignored = db.ignore_photos(ignore) if ignore else 0
+            skipped = len(edits) + len(ignore) - len(done) - ignored
+            if done or ignored:
                 located = sum(1 for e in edits if e.key in done and e.lat is not None)
                 redated = sum(1 for e in edits if e.key in done and e.date)
+                parts = []
+                if done:
+                    parts.append(
+                        f"{len(done)} photos manually edited "
+                        f"({located} located, {redated} re-dated)"
+                    )
+                if ignored:
+                    parts.append(f"{ignored} ignored")
                 db.log_change(
                     "tag",
-                    f"tag: {len(done)} photos manually edited "
-                    f"({located} located, {redated} re-dated)",
+                    "tag: " + ", ".join(parts),
                     {
                         "photos": len(done),
                         "located": located,
                         "redated": redated,
+                        "ignored": ignored,
                         "overwrote_trusted_dates": sum(1 for k in trusted if k in done),
-                        "skipped": len(edits) - len(done),
+                        "skipped": skipped,
                         "places": labels[:50],
                     },
                 )
-        return JSONResponse({"tagged": len(done), "skipped": len(edits) - len(done)})
+        return JSONResponse({"tagged": len(done), "ignored": ignored, "skipped": skipped})
 
     def thumb(request: Request) -> Response:
         key = request.path_params["key"]

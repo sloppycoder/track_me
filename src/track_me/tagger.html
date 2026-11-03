@@ -51,6 +51,7 @@
   .lane { border: 1px solid var(--line); border-radius: 8px; background: var(--card);
           padding: 5px 6px; margin: 6px 0; min-height: 64px; }
   .lane.over { background: var(--drop); border-color: var(--accent); }
+  .lane.ignore { border-style: dashed; margin-top: 16px; }
   .lane-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
   .lane-head .title { font-weight: 500; }
   .lane-head .spacer { flex: 1; }
@@ -168,6 +169,7 @@ async function showClusters() {
 
 /* ------------------------------------------------------------------- lanes */
 let S = null;   // board state for the open range
+const IGNORE = "ignore";   // pseudo-lane id: photos hidden from tagging for good
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 async function showLanes(start, end) {
@@ -187,7 +189,7 @@ async function showLanes(start, end) {
   if (draft) {
     S.lanes = draft.lanes || [];
     for (const [k, id] of draft.assign || [])
-      if (S.photos.has(k) && S.lanes.some((l) => l.id === id)) S.assign.set(k, id);
+      if (S.photos.has(k) && (id === IGNORE || S.lanes.some((l) => l.id === id))) S.assign.set(k, id);
   }
   for (const p of data.photos) S.els.set(p.key, makeTile(p));
   buildBoard();
@@ -235,7 +237,7 @@ function selectTile(key, e) {
   updateCounts();
 }
 
-let poolEl, lanesEl, saveBtn, countEl, input, dateInput, addBtn, filtersEl;
+let poolEl, lanesEl, ignoreEl, saveBtn, countEl, input, dateInput, addBtn, filtersEl;
 const prefixOf = (name) => (name.match(/^\D*/) || [""])[0].toUpperCase();
 const visible = (k) => {
   const p = S.photos.get(k);
@@ -244,6 +246,7 @@ const visible = (k) => {
 function buildBoard() {
   poolEl = h("div", { class: "tiles" });
   lanesEl = h("div");
+  ignoreEl = h("div", { class: "tiles" });
   countEl = h("span", { class: "muted" });
   saveBtn = h("button", { class: "primary", onclick: save });
   input = h("input", { type: "text", placeholder: "Place (optional): plus code, lat, lng, or name" });
@@ -262,6 +265,13 @@ function buildBoard() {
     poolEl);
   makeDropTarget(pool, null);
 
+  const ignore = h("div", { class: "lane ignore" },
+    h("div", { class: "lane-head" }, h("span", { class: "title", text: "Ignore" }),
+      h("span", { class: "muted", id: "ignorecount" }),
+      h("span", { class: "muted", text: "— screenshots, scans … hidden everywhere for good on Save" })),
+    ignoreEl);
+  makeDropTarget(ignore, IGNORE);
+
   const dates = S.start === S.end ? S.start : `${S.start} → ${S.end}`;
   const more = S.total > S.shown
     ? ` Saving loads the next batch (${(S.total - S.shown).toLocaleString()} more).` : "";
@@ -272,7 +282,7 @@ function buildBoard() {
       h("span", { class: "spacer" }), countEl, saveBtn),
     h("div", { id: "pool-wrap" }, filtersEl, pool),
     h("div", { class: "addlane" }, input, dateInput, addBtn),
-    lanesEl);
+    lanesEl, ignore);
 }
 function makeDropTarget(el, laneId) {
   el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("over"); });
@@ -290,10 +300,15 @@ function moveSelected(laneId) {
 }
 function renderBoard() {
   const pool = poolKeys(), shown = pool.filter(visible);
+  // A photo the filter hides must not stay selected: dropping a selection would move it
+  // unseen (into Ignore, that hides it for good).
+  for (const k of pool) if (S.sel.has(k) && !visible(k)) setSelected(k, false);
   poolEl.replaceChildren(...shown.map((k) => S.els.get(k)));
   $("#poolcount").textContent = shown.length === pool.length ? plural(pool.length, "photo")
     : `${shown.length.toLocaleString()} of ${plural(pool.length, "photo")}`;
   renderFilters(pool);
+  ignoreEl.replaceChildren(...laneKeys(IGNORE).map((k) => S.els.get(k)));
+  $("#ignorecount").textContent = plural(laneKeys(IGNORE).length, "photo");
   lanesEl.replaceChildren(...S.lanes.map((lane) => {
     const tiles = h("div", { class: "tiles" }, laneKeys(lane.id).map((k) => S.els.get(k)));
     const el = h("div", { class: "lane" },
@@ -326,9 +341,9 @@ function renderFilters(pool) {
     S.camera || S.prefix ? h("button", { text: "Show all", onclick: () => { S.camera = S.prefix = ""; renderBoard(); } }) : null);
 }
 function updateCounts() {
-  const n = S.assign.size;
-  saveBtn.textContent = `Save ${plural(n, "tag")}`;
-  saveBtn.disabled = n === 0;
+  const ignored = laneKeys(IGNORE).length, n = S.assign.size - ignored;
+  saveBtn.textContent = `Save ${plural(n, "tag")}` + (ignored ? `, ${ignored} ignored` : "");
+  saveBtn.disabled = S.assign.size === 0;
   countEl.textContent = S.sel.size ? `${S.sel.size} selected` : "";
 }
 function persist() {
@@ -358,11 +373,15 @@ async function addLane() {
 async function save() {
   const lanes = S.lanes.map((l) => ({ label: l.label, lat: l.lat, lng: l.lng, date: l.date, keys: laneKeys(l.id) }))
                        .filter((l) => l.keys.length);
-  if (!lanes.length) return;
+  const ignore = laneKeys(IGNORE);
+  if (!lanes.length && !ignore.length) return;
   const n = lanes.reduce((sum, l) => sum + l.keys.length, 0);
   const desc = (l) => [l.label, l.date && `date ${l.date}`].filter(Boolean).join(", ");
-  if (!confirm(`Save ${plural(n, "tag")} in ${plural(lanes.length, "lane")}?\n\n` +
-               lanes.map((l) => `• ${desc(l)}: ${l.keys.length}`).join("\n"))) return;
+  const lines = lanes.map((l) => `• ${desc(l)}: ${l.keys.length}`);
+  if (ignore.length) lines.push(`• Ignore (hidden everywhere for good): ${ignore.length}`);
+  if (!confirm(`Save ${plural(n, "tag")} in ${plural(lanes.length, "lane")}` +
+               (ignore.length ? ` and ignore ${ignore.length}` : "") + "?\n\n" +
+               lines.join("\n"))) return;
 
   // Re-dating a photo whose date looks real (not a placeholder) needs a second yes.
   const trusted = lanes.filter((l) => l.date).flatMap((l) => l.keys)
@@ -378,12 +397,13 @@ async function save() {
   saveBtn.disabled = true;
   status("Saving…");
   try {
-    const r = await api("/api/tags", { lanes, confirm_overwrite: overwrite });
+    const r = await api("/api/tags", { lanes, ignore, confirm_overwrite: overwrite });
     store.del(S.dkey);
-    const skipped = r.skipped ? ` (${r.skipped} skipped: already located)` : "";
+    const ign = r.ignored ? `, ignored ${r.ignored}` : "";
+    const skipped = r.skipped ? ` (${r.skipped} skipped: already located or ignored)` : "";
     const moved = lanes.some((l) => l.date) ? " Re-dated photos may have left this date range." : "";
     await showLanes(S.start, S.end);
-    status(`Saved ${plural(r.tagged, "photo")}${skipped}.${moved}`);
+    status(`Saved ${plural(r.tagged, "photo")}${ign}${skipped}.${moved}`);
   } catch (e) { status(e.message, true); saveBtn.disabled = false; }
 }
 

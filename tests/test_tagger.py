@@ -187,6 +187,18 @@ def test_trusted_dates_excludes_placeholders_and_manual(db):
     assert db.trusted_dates(K[:4], generic) == {K[1]: "2007-07-09"}
 
 
+def test_ignored_photos_drop_out_of_every_untagged_query(db):
+    _photo(db, K[0], "2006-12-18")
+    _photo(db, K[1], "2006-12-18")
+    _photo(db, K[2], "2006-12-19", lat=5.0)
+    assert db.ignore_photos([K[0], K[2], K[6]]) == 1  # located / unknown are not added
+    assert db.ignore_photos([K[0]]) == 0  # already ignored
+    assert db.untagged_day_counts() == [("2006-12-18", 1)]
+    assert db.count_untagged("2006-12-18", "2006-12-19") == 1
+    assert [p["dedupe_key"] for p in db.untagged_photos("2006-12-18", "2006-12-19", 10)] == [K[1]]
+    assert db.get_media_by_dedupe_key(K[0]).latitude is None  # media row untouched
+
+
 # --- HTTP -------------------------------------------------------------------
 def test_page_and_clusters(client, db):
     assert "Tag photos" in client.get("/").text
@@ -224,7 +236,8 @@ def test_save_tags_writes_and_logs_once(client, db):
         {"label": "Tokyo", "lat": 35.6586, "lng": 139.7454, "keys": K[:2]},
         {"label": "Empty lane", "lat": 1.0, "lng": 2.0, "keys": []},
     ]
-    assert client.post("/api/tags", json={"lanes": lanes}).json() == {"tagged": 2, "skipped": 0}
+    saved = client.post("/api/tags", json={"lanes": lanes}).json()
+    assert saved == {"tagged": 2, "ignored": 0, "skipped": 0}
     assert db.get_media_by_dedupe_key(K[0]).location_source == LocationSource.MANUAL
     assert db.get_media_by_dedupe_key(K[2]).latitude is None
     log = db.recent_changes(1)[0]
@@ -234,7 +247,7 @@ def test_save_tags_writes_and_logs_once(client, db):
     # saving the same photos again changes nothing and logs nothing
     n = len(db.recent_changes(100))
     again = client.post("/api/tags", json={"lanes": lanes}).json()
-    assert again == {"tagged": 0, "skipped": 2}
+    assert again == {"tagged": 0, "ignored": 0, "skipped": 2}
     assert len(db.recent_changes(100)) == n
 
 
@@ -256,7 +269,11 @@ def test_save_date_only_lane_and_log(client, db):
     _photo(db, K[0], "2000-12-31")
     _photo(db, K[1], "2000-12-31")
     lanes = [{"label": "", "date": "2007-07-09", "keys": K[:2]}]
-    assert client.post("/api/tags", json={"lanes": lanes}).json() == {"tagged": 2, "skipped": 0}
+    assert client.post("/api/tags", json={"lanes": lanes}).json() == {
+        "tagged": 2,
+        "ignored": 0,
+        "skipped": 0,
+    }
     assert db.get_media_by_dedupe_key(K[0]).local_date == "2007-07-09"
     log = db.recent_changes(1)[0]
     assert log["details"]["redated"] == 2 and log["details"]["located"] == 0
@@ -273,7 +290,7 @@ def test_redating_a_trusted_date_needs_confirmation(client, db):
     assert len(db.recent_changes(100)) == logged
 
     ok = client.post("/api/tags", json={"lanes": lanes, "confirm_overwrite": True})
-    assert ok.json() == {"tagged": 1, "skipped": 0}
+    assert ok.json() == {"tagged": 1, "ignored": 0, "skipped": 0}
     assert db.get_media_by_dedupe_key(K[0]).local_date == "2008-08-13"
     assert db.recent_changes(1)[0]["details"]["overwrote_trusted_dates"] == 1
     # now it is a manual date, so changing it again needs no confirmation
@@ -285,6 +302,67 @@ def test_location_only_lane_never_asks_for_date_confirmation(client, db):
     _photo(db, K[0], "2007-07-09")
     lanes = [{"label": "Tokyo", "lat": 35.6586, "lng": 139.7454, "keys": K[:1]}]
     assert client.post("/api/tags", json={"lanes": lanes}).json()["tagged"] == 1
+
+
+def test_save_with_ignore_lane_hides_photos_and_logs_once(client, db):
+    for key in K[:3]:
+        _photo(db, key, "2006-12-18")
+    body = {
+        "lanes": [{"label": "Tokyo", "lat": 35.6586, "lng": 139.7454, "keys": K[:1]}],
+        "ignore": K[1:3],
+    }
+    assert client.post("/api/tags", json=body).json() == {"tagged": 1, "ignored": 2, "skipped": 0}
+    params = {"start": "2006-12-18", "end": "2006-12-18"}
+    assert client.get("/api/photos", params=params).json()["total"] == 0
+    log = db.recent_changes(1)[0]
+    assert log["summary"] == "tag: 1 photos manually edited (1 located, 0 re-dated), 2 ignored"
+    assert log["details"]["ignored"] == 2
+
+    # ignore-only save works too; repeating it is a no-op that logs nothing
+    n = len(db.recent_changes(100))
+    again = client.post("/api/tags", json={"lanes": [], "ignore": K[1:3]}).json()
+    assert again == {"tagged": 0, "ignored": 0, "skipped": 2}
+    assert len(db.recent_changes(100)) == n
+
+    _photo(db, K[3], "2006-12-18")
+    client.post("/api/tags", json={"lanes": [], "ignore": K[3:4]})
+    assert db.recent_changes(1)[0]["summary"] == "tag: 1 ignored"
+
+
+def test_unconfirmed_redate_writes_no_ignores_either(client, db):
+    _photo(db, K[0], "2007-07-09")
+    _photo(db, K[1], "2007-07-09")
+    body = {"lanes": [{"label": "", "date": "2008-08-13", "keys": K[:1]}], "ignore": K[1:2]}
+    assert client.post("/api/tags", json=body).status_code == 409
+    assert db.count_untagged("2007-07-09", "2007-07-09") == 2  # K[1] not ignored
+
+
+def test_ignored_photo_cannot_be_tagged_or_redated(db):
+    _photo(db, K[0], "2007-07-09")
+    db.ignore_photos(K[:1])
+    assert db.trusted_dates(K[:1], set()) == {}
+    assert db.tag_manual([ManualEdit(K[0], 35.6586, 139.7454, "2008-08-13")]) == []
+    m = db.get_media_by_dedupe_key(K[0])
+    assert m.latitude is None and m.local_date == "2007-07-09"
+
+
+def test_ignored_photo_stays_hidden_after_it_gains_a_location(db):
+    _photo(db, K[0], "2001-01-01")
+    _photo(db, K[1], "2007-07-09", lat=5.0)
+    db.ignore_photos(K[:1])
+    _photo(db, K[0], "2001-01-01", lat=6.0)  # e.g. ingest of a re-tagged sidecar
+    assert [m.dedupe_key for m in db.iter_located()] == [K[1]]
+    assert [r["local_date"] for r in db.located_with_place()] == ["2007-07-09"]
+    assert [r["local_date"] for r in db.search_located()] == ["2007-07-09"]
+    summary = db.catalog_summary()
+    assert summary["total"] == 1 and summary["first_date"] == "2007-07-09"
+
+
+def test_catalog_without_tag_ignore_table_still_reads(db):
+    _photo(db, K[0], "2007-07-09", lat=5.0)
+    db.conn.execute("DROP TABLE tag_ignore")
+    assert db.catalog_summary()["total"] == 1
+    assert len(db.search_located()) == 1
 
 
 def test_save_tags_validation(client):
@@ -299,7 +377,10 @@ def test_save_tags_validation(client):
     bad_lat = {"lanes": [{"label": "x", "lat": 91, "lng": 2, "keys": K[:1]}]}
     assert client.post("/api/tags", json=bad_lat).status_code == 422
     assert client.post("/api/tags", json={}).status_code == 400
-    assert client.post("/api/tags", json={"lanes": []}).json() == {"tagged": 0, "skipped": 0}
+    empty = client.post("/api/tags", json={"lanes": []}).json()
+    assert empty == {"tagged": 0, "ignored": 0, "skipped": 0}
+    bad_ignore = {"lanes": [], "ignore": ["not-a-key"]}
+    assert client.post("/api/tags", json=bad_ignore).status_code == 400
 
 
 def test_thumbnail_route_serves_only_valid_keys(client, thumbs):

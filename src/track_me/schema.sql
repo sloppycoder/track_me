@@ -98,3 +98,11 @@ CREATE TABLE IF NOT EXISTS change_log (
     summary TEXT NOT NULL,      -- one human-readable line
     details TEXT                -- JSON: counts / flags
 );
+
+-- Photos hidden from the tagging app (screenshots, scans …): no location, and none
+-- wanted. Keyed by dedupe_key like media, so it survives re-ingest; ingest never
+-- touches it. Delete a row to bring the photo back.
+CREATE TABLE IF NOT EXISTS tag_ignore (
+    dedupe_key TEXT PRIMARY KEY,
+    ignored_at TEXT NOT NULL    -- ISO-8601 UTC
+);
