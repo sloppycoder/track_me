@@ -267,6 +267,21 @@ def test_manual_location_preserved_on_reingest(db, thumbs_dir, takeout):
     assert item.latitude == pytest.approx(1.29)
 
 
+def test_manual_date_preserved_on_reingest(db, thumbs_dir, takeout):
+    _pipeline(db, thumbs_dir).ingest(takeout)
+    item = _by_name(db, "IMG_2.JPG")
+    when = datetime(2007, 7, 9, 12, tzinfo=dt_timezone.utc)
+    item.taken_at, item.taken_at_source = when, TimeSource.MANUAL
+    item.refresh_local_date()
+    db.upsert_media(item)
+
+    _pipeline(db, thumbs_dir).ingest(takeout, force=True)
+    item = _by_name(db, "IMG_2.JPG")
+    assert item.taken_at == when
+    assert item.taken_at_source == TimeSource.MANUAL
+    assert item.local_date == "2007-07-09"
+
+
 def test_retagged_sidecar_is_refreshed_not_skipped(db, thumbs_dir, tmp_path):
     root = tmp_path / "T"
     root.mkdir()

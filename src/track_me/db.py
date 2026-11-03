@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Collection
 from dataclasses import dataclass, field, fields
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -210,6 +211,17 @@ def local_date_for(taken_at: datetime | None, tz: str | None) -> str | None:
 # --------------------------------------------------------------------------- #
 # dataclasses                                                                  #
 # --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class ManualEdit:
+    """One photo's manual correction from the tagging app: a location (``lat`` and
+    ``lng`` together), a capture ``date`` (local ``YYYY-MM-DD``), or both."""
+
+    key: str
+    lat: float | None = None
+    lng: float | None = None
+    date: str | None = None
+
+
 @dataclass
 class Place:
     """One geocoded location cell (shared across photos in the cell)."""
@@ -620,52 +632,94 @@ class Database:
     def untagged_photos(self, start: str, end: str, limit: int) -> list[dict]:
         """First ``limit`` untagged photos with local_date in [start, end], oldest first."""
         rows = self.conn.execute(
-            "SELECT dedupe_key, local_date, taken_at, file_name, google_photos_url FROM media "
+            "SELECT dedupe_key, local_date, taken_at, taken_at_source, file_name, "
+            "google_photos_url, json_extract(exif, '$.Make') AS make, "
+            "json_extract(exif, '$.Model') AS model FROM media "
             "WHERE latitude IS NULL AND kind = 'photo' AND local_date BETWEEN ? AND ? "
             "ORDER BY local_date, taken_at, id LIMIT ?",
             (start, end, limit),
         )
         return [dict(r) for r in rows]
 
-    def tag_manual(self, updates: list[tuple[str, float, float]]) -> int:
-        """Give photos a manual location, all in one transaction. ``updates`` is
-        ``(dedupe_key, lat, lng)``. Photos that already have a location are left alone
-        (a stale browser tab must not overwrite anything). Clears ``geo_cell`` so the
-        next ``geocode`` links the photo to a place, and re-buckets ``local_date`` in the
-        new location's timezone. Returns how many photos were tagged."""
+    def trusted_dates(self, keys: list[str], generic_dates: Collection[str]) -> dict[str, str]:
+        """Of the unlocated photos in ``keys``, those whose current date should be trusted:
+        not a placeholder (``generic_dates``) and not already set by hand. Maps
+        dedupe_key -> local_date. Re-dating these is what the tagger asks to confirm."""
+        out: dict[str, str] = {}
+        for key in keys:
+            row = self.conn.execute(
+                "SELECT local_date, taken_at_source FROM media "
+                "WHERE dedupe_key = ? AND latitude IS NULL",
+                (key,),
+            ).fetchone()
+            if row is None or row["local_date"] is None:
+                continue
+            if row["local_date"] in generic_dates or row["taken_at_source"] == TimeSource.MANUAL:
+                continue
+            out[key] = row["local_date"]
+        return out
+
+    def tag_manual(self, edits: list[ManualEdit]) -> list[str]:
+        """Apply manual edits to photos with no location, all in one transaction.
+
+        An edit may set a location, a capture date, or both. Photos that already have a
+        location are left alone (a stale browser tab must not overwrite anything).
+
+        - Location: clears ``geo_cell`` so the next ``geocode`` links the photo to a
+          place, and the timezone becomes the new location's.
+        - Date: ``taken_at`` becomes 12:00 local on that day (the real time of day is
+          unknown) and ``taken_at_source`` becomes ``manual``, so a later ingest keeps it.
+        - A photo whose date is already manual keeps its day when a location is added
+          (re-anchored to noon in the new timezone), so the day cannot shift.
+        - ``local_date`` is re-bucketed in the resulting timezone.
+
+        Returns the dedupe_keys that were changed."""
         now = to_iso(now_utc())
-        tagged = 0
+        done: list[str] = []
         try:
-            for key, lat, lng in updates:
+            for e in edits:
                 row = self.conn.execute(
-                    "SELECT taken_at FROM media WHERE dedupe_key = ? AND latitude IS NULL",
-                    (key,),
+                    "SELECT taken_at, taken_at_source, timezone, local_date FROM media "
+                    "WHERE dedupe_key = ? AND latitude IS NULL",
+                    (e.key,),
                 ).fetchone()
                 if row is None:
                     continue
-                tz = timezone_for(lat, lng)
-                local = local_date_for(from_iso(row["taken_at"]), tz)
+                sets: dict[str, object] = {"updated_at": now}
+                tz = row["timezone"]
+                if e.lat is not None and e.lng is not None:
+                    tz = timezone_for(e.lat, e.lng)
+                    sets |= {
+                        "latitude": float(e.lat),
+                        "longitude": float(e.lng),
+                        "h3_cell": h3.latlng_to_cell(e.lat, e.lng, H3_BASE_RESOLUTION),
+                        "geo_cell": None,
+                        "location_source": LocationSource.MANUAL,
+                        "timezone": tz,
+                        "needs_review": 0,
+                    }
+                taken = from_iso(row["taken_at"])
+                day = e.date
+                if day is None and "latitude" in sets and row["taken_at_source"] == "manual":
+                    day = row["local_date"]  # keep the chosen day in the new timezone
+                if day:
+                    zone = ZoneInfo(tz) if tz else UTC
+                    noon = datetime.combine(date.fromisoformat(day), time(12), tzinfo=zone)
+                    taken = noon.astimezone(UTC)
+                    sets |= {"taken_at": to_iso(taken), "taken_at_source": TimeSource.MANUAL}
+                if (local := local_date_for(taken, tz)) is not None:
+                    sets["local_date"] = local
+                assignments = ", ".join(f"{c} = ?" for c in sets)
                 self.conn.execute(
-                    "UPDATE media SET latitude = ?, longitude = ?, h3_cell = ?, geo_cell = NULL, "
-                    "location_source = ?, timezone = ?, local_date = COALESCE(?, local_date), "
-                    "needs_review = 0, updated_at = ? WHERE dedupe_key = ?",
-                    (
-                        float(lat),
-                        float(lng),
-                        h3.latlng_to_cell(lat, lng, H3_BASE_RESOLUTION),
-                        LocationSource.MANUAL,
-                        tz,
-                        local,
-                        now,
-                        key,
-                    ),
+                    f"UPDATE media SET {assignments} WHERE dedupe_key = ?",
+                    (*sets.values(), e.key),
                 )
-                tagged += 1
+                done.append(e.key)
             self.conn.commit()
         except Exception:
             self.conn.rollback()
             raise
-        return tagged
+        return done
 
     # --- join (timeline / export) ---------------------------------------
     def located_with_place(self, year: int | None = None) -> list[dict]:

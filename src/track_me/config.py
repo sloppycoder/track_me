@@ -37,6 +37,14 @@ THUMBNAIL_SIZE = (
 # TAG_MAX_PHOTOS loads only its first TAG_MAX_PHOTOS photos.
 TAG_MAX_PHOTOS = int(os.getenv("TAG_MAX_PHOTOS", "300"))
 TAG_CLUSTER_GAP_DAYS = int(os.getenv("TAG_CLUSTER_GAP_DAYS", "14"))
+# Placeholder capture dates: re-dating photos on these days needs no confirmation (any
+# other date is trusted and asks first). The iPhone's "no date" is 2001-01-01, which
+# shows as 2000-12-31 in zones west of UTC.
+TAG_GENERIC_DATES = frozenset(
+    d.strip()
+    for d in os.getenv("TAG_GENERIC_DATES", "2000-12-31,2001-01-01").split(",")
+    if d.strip()
+)
 
 # --- ingest / geocode ----------------------------------------------------
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")

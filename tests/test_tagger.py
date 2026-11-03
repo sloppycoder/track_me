@@ -3,16 +3,23 @@ from datetime import UTC, datetime
 import pytest
 from starlette.testclient import TestClient
 
-from track_me.db import Database, LocationSource, Media
-from track_me.tagger import ResolveError, build_clusters, create_app, resolve_place
+from track_me.db import Database, LocationSource, ManualEdit, Media, TimeSource
+from track_me.tagger import (
+    ResolveError,
+    build_clusters,
+    camera_label,
+    create_app,
+    resolve_place,
+)
 
 K = [f"{i:040x}" for i in range(1, 8)]  # 40-hex keys, like real dedupe_keys
 
 
-def _photo(db, key, day, *, lat=None, kind="photo", hour=12):
+def _photo(db, key, day, *, lat=None, kind="photo", hour=12, source=TimeSource.SIDECAR):
     m = Media(dedupe_key=key, file_name=f"{key[-4:]}.jpg", kind=kind)
     y, mo, d = map(int, day.split("-"))
     m.taken_at = datetime(y, mo, d, hour, tzinfo=UTC)
+    m.taken_at_source = source
     m.google_photos_url = f"https://photos.google.com/photo/{key[-4:]}"
     if lat is not None:
         m.set_location(lat, 10.0, LocationSource.TAKEOUT)
@@ -38,7 +45,14 @@ def thumbs(tmp_path):
 @pytest.fixture
 def client(db, thumbs):
     return TestClient(
-        create_app(db.path, thumbs, max_photos=2, gap_days=3, geocode_client=_Fake())
+        create_app(
+            db.path,
+            thumbs,
+            max_photos=2,
+            gap_days=3,
+            geocode_client=_Fake(),
+            generic_dates={"2000-12-31", "2001-01-01"},
+        )
     )
 
 
@@ -64,6 +78,19 @@ def test_build_clusters_splits_on_gap():
     assert len(build_clusters(days, gap_days=1)) == 4
     assert len(build_clusters([("2006-12-18", 1), ("2006-12-22", 1)], gap_days=3)) == 2  # 4 days
     assert build_clusters([], gap_days=3) == []
+
+
+# --- camera names -------------------------------------------------------------
+def test_camera_label_from_exif_then_prefix():
+    assert camera_label("NIKON", "E885", "DSCN0678.JPG") == "Nikon E885"
+    assert camera_label("NIKON CORPORATION", "NIKON D300", "x.jpg") == "Nikon D300"
+    assert camera_label("Canon", "Canon EOS DIGITAL REBEL", "x.jpg") == "Canon EOS DIGITAL REBEL"
+    assert camera_label("OLYMPUS IMAGING CORP.  ", "XZ-1            ", "x.jpg").endswith("XZ-1")
+    assert camera_label("SONY", "DSC-W5", "DSC00012.JPG") == "Sony DSC-W5"
+    assert camera_label("Apple", "iPhone 4S", "IMG_1.JPG") == "Apple iPhone 4S"
+    assert camera_label(None, None, "DSCN0001.JPG") == "Nikon Coolpix"  # no EXIF: known prefix
+    assert camera_label(None, None, "IMG_0001.JPG") == "IMG_"  # ambiguous: show the prefix
+    assert camera_label("", "", "20190101.jpg") == "Unknown camera"
 
 
 # --- resolving a lane's place ----------------------------------------------
@@ -96,7 +123,7 @@ def test_resolve_without_api_key(monkeypatch):
 # --- Database.tag_manual ----------------------------------------------------
 def test_tag_manual_sets_location_and_rebuckets_day(db):
     _photo(db, K[0], "2006-12-31", hour=20)  # 20:00 UTC = 05:00 next day in Tokyo
-    assert db.tag_manual([(K[0], 35.6586, 139.7454)]) == 1
+    assert db.tag_manual([ManualEdit(K[0], 35.6586, 139.7454)]) == [K[0]]
     m = db.get_media_by_dedupe_key(K[0])
     assert m.location_source == LocationSource.MANUAL
     assert (m.latitude, m.longitude) == (35.6586, 139.7454)
@@ -108,7 +135,7 @@ def test_tag_manual_sets_location_and_rebuckets_day(db):
 
 def test_tag_manual_never_overwrites_a_located_photo(db):
     _photo(db, K[0], "2019-05-01", lat=1.0)
-    assert db.tag_manual([(K[0], 35.0, 139.0), (K[1], 35.0, 139.0)]) == 0  # located / unknown
+    assert db.tag_manual([ManualEdit(K[0], 35.0, 139.0), ManualEdit(K[1], 35.0, 139.0)]) == []
     assert db.get_media_by_dedupe_key(K[0]).latitude == 1.0
 
 
@@ -121,6 +148,43 @@ def test_untagged_queries_skip_videos_and_located(db):
     assert db.count_untagged("2006-12-19", "2006-12-19") == 1
     assert [p["dedupe_key"] for p in db.untagged_photos("2006-12-18", "2006-12-19", 10)] == K[:2]
     assert len(db.untagged_photos("2006-12-18", "2006-12-19", 1)) == 1
+
+
+def test_tag_manual_date_only_sets_noon_local_and_manual_source(db):
+    _photo(db, K[0], "2000-12-31", hour=21)
+    assert db.tag_manual([ManualEdit(K[0], date="2007-07-09")]) == [K[0]]
+    m = db.get_media_by_dedupe_key(K[0])
+    assert m.taken_at == datetime(2007, 7, 9, 12, tzinfo=UTC)  # no timezone known -> UTC noon
+    assert m.taken_at_source == TimeSource.MANUAL
+    assert m.local_date == "2007-07-09"
+    assert m.latitude is None  # still untagged: only the date was fixed
+
+
+def test_tag_manual_date_with_location_is_noon_in_that_timezone(db):
+    _photo(db, K[0], "2000-12-31", hour=21)
+    db.tag_manual([ManualEdit(K[0], 35.6586, 139.7454, "2007-07-09")])
+    m = db.get_media_by_dedupe_key(K[0])
+    assert m.taken_at == datetime(2007, 7, 9, 3, tzinfo=UTC)  # 12:00 in Tokyo (UTC+9)
+    assert m.local_date == "2007-07-09" and m.timezone == "Asia/Tokyo"
+
+
+def test_adding_location_later_keeps_the_manual_day(db):
+    _photo(db, K[0], "2000-12-31", hour=21)
+    db.tag_manual([ManualEdit(K[0], date="2007-07-09")])  # UTC noon
+    db.tag_manual([ManualEdit(K[0], -36.85, 174.76)])  # Auckland, UTC+12/13
+    m = db.get_media_by_dedupe_key(K[0])
+    assert m.timezone == "Pacific/Auckland"
+    assert m.local_date == "2007-07-09"  # not shifted to the 10th
+    assert m.taken_at_source == TimeSource.MANUAL
+
+
+def test_trusted_dates_excludes_placeholders_and_manual(db):
+    generic = {"2000-12-31", "2001-01-01"}
+    _photo(db, K[0], "2000-12-31")
+    _photo(db, K[1], "2007-07-09")
+    _photo(db, K[2], "2008-08-13", source=TimeSource.MANUAL)
+    _photo(db, K[3], "2009-01-01", lat=1.0)  # located: not editable at all
+    assert db.trusted_dates(K[:4], generic) == {K[1]: "2007-07-09"}
 
 
 # --- HTTP -------------------------------------------------------------------
@@ -174,7 +238,62 @@ def test_save_tags_writes_and_logs_once(client, db):
     assert len(db.recent_changes(100)) == n
 
 
+def test_clusters_and_photos_flag_placeholder_dates(client, db):
+    _photo(db, K[0], "2000-12-31")
+    _photo(db, K[1], "2007-07-09")
+    body = client.get("/api/clusters").json()
+    assert {c["start"]: c["generic"] for c in body["clusters"]} == {
+        "2000-12-31": 1,
+        "2007-07-09": 0,
+    }
+    ph = client.get("/api/photos", params={"start": "2000-12-31", "end": "2007-07-09"}).json()
+    flags = {p["key"]: (p["generic"], p["trusted"]) for p in ph["photos"]}
+    assert flags == {K[0]: (True, False), K[1]: (False, True)}
+    assert all(p["camera"] == "Unknown camera" for p in ph["photos"])  # fixtures: no EXIF
+
+
+def test_save_date_only_lane_and_log(client, db):
+    _photo(db, K[0], "2000-12-31")
+    _photo(db, K[1], "2000-12-31")
+    lanes = [{"label": "", "date": "2007-07-09", "keys": K[:2]}]
+    assert client.post("/api/tags", json={"lanes": lanes}).json() == {"tagged": 2, "skipped": 0}
+    assert db.get_media_by_dedupe_key(K[0]).local_date == "2007-07-09"
+    log = db.recent_changes(1)[0]
+    assert log["details"]["redated"] == 2 and log["details"]["located"] == 0
+
+
+def test_redating_a_trusted_date_needs_confirmation(client, db):
+    _photo(db, K[0], "2007-07-09")
+    lanes = [{"label": "", "date": "2008-08-13", "keys": K[:1]}]
+    logged = len(db.recent_changes(100))
+    r = client.post("/api/tags", json={"lanes": lanes})
+    assert r.status_code == 409
+    assert r.json()["needs_confirmation"] and r.json()["dates"] == ["2007-07-09"]
+    assert db.get_media_by_dedupe_key(K[0]).local_date == "2007-07-09"  # nothing written
+    assert len(db.recent_changes(100)) == logged
+
+    ok = client.post("/api/tags", json={"lanes": lanes, "confirm_overwrite": True})
+    assert ok.json() == {"tagged": 1, "skipped": 0}
+    assert db.get_media_by_dedupe_key(K[0]).local_date == "2008-08-13"
+    assert db.recent_changes(1)[0]["details"]["overwrote_trusted_dates"] == 1
+    # now it is a manual date, so changing it again needs no confirmation
+    again = [{"label": "", "date": "2008-08-14", "keys": K[:1]}]
+    assert client.post("/api/tags", json={"lanes": again}).json()["tagged"] == 1
+
+
+def test_location_only_lane_never_asks_for_date_confirmation(client, db):
+    _photo(db, K[0], "2007-07-09")
+    lanes = [{"label": "Tokyo", "lat": 35.6586, "lng": 139.7454, "keys": K[:1]}]
+    assert client.post("/api/tags", json={"lanes": lanes}).json()["tagged"] == 1
+
+
 def test_save_tags_validation(client):
+    assert client.post("/api/tags", json={"lanes": [{"keys": K[:1]}]}).status_code == 400
+    for bad in ("2007-13-01", "9999-01-01", "x"):
+        lane = {"date": bad, "keys": K[:1]}
+        assert client.post("/api/tags", json={"lanes": [lane]}).status_code == 422
+    half = {"lat": 1, "keys": K[:1], "date": "2007-01-01"}
+    assert client.post("/api/tags", json={"lanes": [half]}).status_code == 400
     bad_key = {"lanes": [{"label": "x", "lat": 1, "lng": 2, "keys": ["../../etc/passwd"]}]}
     assert client.post("/api/tags", json=bad_key).status_code == 400
     bad_lat = {"lanes": [{"label": "x", "lat": 91, "lng": 2, "keys": K[:1]}]}

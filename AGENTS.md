@@ -125,13 +125,19 @@ next run; `--derive-only` does just the re-derive.
 `src/track_me/tagger.py` (Starlette, JSON endpoints; logic in plain functions tested in
 `tests/test_tagger.py`) + `tagger.html` (one page, plain JS). Page 1 clusters photos with
 no location by date (`TAG_CLUSTER_GAP_DAYS`), page 2 is the multi-lane board
-(`TAG_MAX_PHOTOS` per load). Lanes are a browser-side draft until Save, which calls
-`Database.tag_manual` — one transaction, sets `location_source='manual'`, clears
-`needs_review` and `geo_cell` (so `geocode` links it), re-buckets `local_date` in the new
-timezone, never touches a photo that already has a location — then one `tag`
-`change_log` row. Lane places resolve via the Google Geocoding API (plus codes and names)
-or offline for `lat, lng`. Thumbnails are read from `THUMBNAIL_CACHE_DIR` by 40-hex
-`dedupe_key` only. No auth: loopback by default, Cloudflare Access in front when exposed.
+(`TAG_MAX_PHOTOS` per load). Lanes are a browser-side draft until Save; a lane has a place, a date, or both. Save
+calls `Database.tag_manual(list[ManualEdit])` — one transaction; a place sets
+`location_source='manual'`, clears `needs_review` and `geo_cell` (so `geocode` links it);
+a date sets `taken_at` to 12:00 local (the place's timezone, else the photo's, else UTC)
+with `taken_at_source='manual'` (ingest preserves it); `local_date` is re-bucketed. A photo
+whose date is already manual keeps its day when a location is added later. It never touches
+a photo that already has a location. Then one `tag` `change_log` row. Placeholder dates
+(`TAG_GENERIC_DATES`, default 2000-12-31/2001-01-01 = the iPhone's "no date") re-date freely;
+re-dating any other date needs `confirm_overwrite` (the API answers 409 otherwise,
+`Database.trusted_dates`). The pool has client-side camera chips (`tagger.camera_label`: EXIF make/model, else prefix) plus a file-name-prefix box.
+Lane places resolve via the Google Geocoding API (plus codes and names) or offline for
+`lat, lng`. Thumbnails are read from `THUMBNAIL_CACHE_DIR` by 40-hex `dedupe_key` only. No
+auth: loopback by default, Cloudflare Access in front when exposed.
 
 ## Building travel timelines
 

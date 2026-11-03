@@ -70,11 +70,21 @@ first batch only; saving loads the next one. On the board, **add a lane** by pas
 Google Maps plus code (e.g. `MP5W+C5 Minato City, Tokyo, Japan`), `lat, lng`, or a place
 name, then **drag photos into it** (click to select, shift-click for a range, a drag
 moves the whole selection). The ↗ on each photo opens the original in Google Photos.
+A lane needs a place, a **date**, or both. Use the date for photos whose capture date is a
+placeholder (an iPhone stores 2001-01-01, which shows as 2000-12-31 west of UTC; those
+photos get a badge, and `TAG_GENERIC_DATES` lists the days treated this way). The photos
+get 12:00 local time on that day (in the lane's place when it has one) and are marked
+`taken_at_source = 'manual'`. Re-dating a photo whose date does *not* look like a
+placeholder asks for a second confirmation, and the server refuses it without one. Above
+the Untagged pool, **camera** chips (`Nikon E885 ·144`, named from EXIF make/model, else a
+known file-name prefix, else the prefix itself) and a "name starts with" box filter; "Select all" selects only what is shown.
 Nothing is written until **Save**: your lanes are kept as a draft in the browser and
-saved in one transaction as `location_source = 'manual'` (never overwritten by ingest
-or geocode), with one `tag` entry in `track-me log`. Run `track-me geocode` afterwards
-to link the new locations to place names. There is no login: it binds to loopback, so
-put an access proxy (e.g. Cloudflare Access) in front if you expose it.
+saved in one transaction (`location_source = 'manual'` and/or `taken_at_source =
+'manual'`, never overwritten by ingest or geocode), with one `tag` entry in
+`track-me log`. Run `track-me geocode` afterwards to link new locations to place names;
+dates need no follow-up, since trips are computed from the catalog at query time. There
+is no login: it binds to loopback, so put an access proxy (e.g. Cloudflare Access) in
+front if you expose it.
 
 `ingest` and `geocode` are **re-runnable and incremental**: already-seen items
 (matched by `dedupe_key`) are skipped and manual edits are never overwritten.

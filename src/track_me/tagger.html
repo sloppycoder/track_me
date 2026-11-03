@@ -62,6 +62,7 @@
   .tile { position: relative; width: 120px; height: 80px; border-radius: 3px;
           border: 2px solid transparent; /* 3:2 like the 480x320 thumbnails */ background: var(--line); cursor: grab;
           user-select: none; overflow: hidden; }
+  .tile.generic { border-color: #c98a00; }
   .tile.sel { border-color: var(--accent); }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .tile .cap { position: absolute; left: 0; bottom: 0; right: 0; padding: 1px 4px;
@@ -70,6 +71,13 @@
                 line-height: 18px; text-align: center; border-radius: 3px; font-size: 12px;
                 text-decoration: none; color: #fff; background: rgba(0,0,0,.55); }
   .tile .orig:hover { background: rgba(0,0,0,.85); }
+  .badge { display: inline-block; padding: 0 6px; border-radius: 9px; font-size: 11px;
+           background: #fdf0cf; color: #6b4a00; }
+  @media (prefers-color-scheme: dark) { .badge { background: #4a3a10; color: #f3d98c; } }
+  .filters { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+  .filters button.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  .filters input { width: 130px; }
+  .addlane input[type=date] { flex: none; }
   .tile.missing::after { content: "no thumbnail"; position: absolute; inset: 0; display: grid;
                          place-items: center; font-size: 12px; color: var(--muted); }
 </style>
@@ -149,7 +157,8 @@ async function showClusters() {
     kids.push(h("div", { class: "cluster" },
       h("div", { class: "samples" }, c.samples.map((k) => h("img", { src: thumbUrl(k), loading: "lazy", alt: "" }))),
       h("div", { class: "info" },
-        h("div", { class: "dates", text: dates }),
+        h("div", { class: "dates" }, dates, " ",
+          c.generic ? h("span", { class: "badge", text: `${plural(c.generic, "photo")} with a placeholder date` }) : null),
         h("div", { class: "muted", text: plural(c.count, "photo") + big })),
       h("button", { class: "primary", text: "Open",
         onclick: () => { location.hash = `#/range/${c.start}/${c.end}`; } })));
@@ -172,7 +181,7 @@ async function showLanes(start, end) {
   S = {
     start, end, dkey: `tagdraft:${start}:${end}`, total: data.total, shown: data.shown,
     photos: new Map(data.photos.map((p) => [p.key, p])), order: data.photos.map((p) => p.key),
-    lanes: [], assign: new Map(), sel: new Set(), last: null, els: new Map(),
+    lanes: [], assign: new Map(), sel: new Set(), last: null, els: new Map(), prefix: "", camera: "",
   };
   const draft = store.get(S.dkey);          // restore an unsaved draft
   if (draft) {
@@ -188,8 +197,9 @@ async function showLanes(start, end) {
 function makeTile(p) {
   const img = h("img", { src: thumbUrl(p.key), loading: "lazy", draggable: "false", alt: "" });
   const t = h("div", { class: "tile", draggable: "true", "data-key": p.key,
-                       title: `${p.name}\n${p.taken_at || ""}` },
+                       title: `${p.name}\n${p.taken_at || ""}${p.generic ? "\n(placeholder date)" : ""}` },
     img, h("span", { class: "cap", text: p.date }));
+  if (p.generic) t.classList.add("generic");
   img.addEventListener("error", () => { img.remove(); t.classList.add("missing"); });
   if (p.url) {                               // the original, in Google Photos
     const a = h("a", { class: "orig", href: p.url, target: "_blank", rel: "noopener",
@@ -225,20 +235,29 @@ function selectTile(key, e) {
   updateCounts();
 }
 
-let poolEl, lanesEl, saveBtn, countEl, input, addBtn;
+let poolEl, lanesEl, saveBtn, countEl, input, dateInput, addBtn, filtersEl;
+const prefixOf = (name) => (name.match(/^\D*/) || [""])[0].toUpperCase();
+const visible = (k) => {
+  const p = S.photos.get(k);
+  return (!S.camera || p.camera === S.camera) && (!S.prefix || p.name.toUpperCase().startsWith(S.prefix));
+};
 function buildBoard() {
   poolEl = h("div", { class: "tiles" });
   lanesEl = h("div");
   countEl = h("span", { class: "muted" });
   saveBtn = h("button", { class: "primary", onclick: save });
-  input = h("input", { type: "text", placeholder: "Plus code (MP5W+C5 Minato City, Tokyo), lat, lng, or place name" });
+  input = h("input", { type: "text", placeholder: "Place (optional): plus code, lat, lng, or name" });
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") addLane(); });
+  dateInput = h("input", { type: "date", title: "New date for the photos in this lane (optional)",
+                           max: new Date().toISOString().slice(0, 10) });
   addBtn = h("button", { text: "Add lane", onclick: addLane });
+  filtersEl = h("div", { class: "filters" });
 
   const pool = h("div", { class: "lane", id: "pool" },
     h("div", { class: "lane-head" }, h("span", { class: "title", text: "Untagged" }),
       h("span", { class: "muted", id: "poolcount" }), h("span", { class: "spacer" }),
-      h("button", { text: "Select all", onclick: () => { for (const k of poolKeys()) setSelected(k, true); updateCounts(); } }),
+      h("button", { text: "Select all", title: "Selects only the photos shown",
+        onclick: () => { for (const k of poolKeys()) if (visible(k)) setSelected(k, true); updateCounts(); } }),
       h("button", { text: "Clear", onclick: () => { clearSelection(); updateCounts(); } })),
     poolEl);
   makeDropTarget(pool, null);
@@ -251,8 +270,8 @@ function buildBoard() {
       h("strong", { text: dates }),
       h("span", { class: "muted", text: `showing ${S.shown.toLocaleString()} of ${S.total.toLocaleString()} untagged.${more}` }),
       h("span", { class: "spacer" }), countEl, saveBtn),
-    h("div", { id: "pool-wrap" }, pool),
-    h("div", { class: "addlane" }, input, addBtn),
+    h("div", { id: "pool-wrap" }, filtersEl, pool),
+    h("div", { class: "addlane" }, input, dateInput, addBtn),
     lanesEl);
 }
 function makeDropTarget(el, laneId) {
@@ -270,16 +289,20 @@ function moveSelected(laneId) {
   renderBoard();
 }
 function renderBoard() {
-  poolEl.replaceChildren(...poolKeys().map((k) => S.els.get(k)));
-  $("#poolcount").textContent = plural(poolKeys().length, "photo");
+  const pool = poolKeys(), shown = pool.filter(visible);
+  poolEl.replaceChildren(...shown.map((k) => S.els.get(k)));
+  $("#poolcount").textContent = shown.length === pool.length ? plural(pool.length, "photo")
+    : `${shown.length.toLocaleString()} of ${plural(pool.length, "photo")}`;
+  renderFilters(pool);
   lanesEl.replaceChildren(...S.lanes.map((lane) => {
     const tiles = h("div", { class: "tiles" }, laneKeys(lane.id).map((k) => S.els.get(k)));
     const el = h("div", { class: "lane" },
       h("div", { class: "lane-head" },
-        h("span", { class: "title", text: lane.label }),
-        h("a", { class: "muted", target: "_blank", rel: "noopener",
+        h("span", { class: "title", text: lane.label || "No place" }),
+        lane.lat != null ? h("a", { class: "muted", target: "_blank", rel: "noopener",
                  href: `https://www.google.com/maps?q=${lane.lat},${lane.lng}`,
-                 text: `${lane.lat.toFixed(4)}, ${lane.lng.toFixed(4)}` }),
+                 text: `${lane.lat.toFixed(4)}, ${lane.lng.toFixed(4)}` }) : null,
+        lane.date ? h("span", { class: "badge", text: `date → ${lane.date}` }) : null,
         h("span", { class: "muted", text: plural(laneKeys(lane.id).length, "photo") }),
         h("span", { class: "spacer" }),
         h("button", { title: "Remove lane (photos go back to Untagged)", text: "×",
@@ -289,6 +312,18 @@ function renderBoard() {
     return el;
   }));
   updateCounts();
+}
+function renderFilters(pool) {
+  const counts = new Map();
+  for (const k of pool) { const c = S.photos.get(k).camera; counts.set(c, (counts.get(c) || 0) + 1); }
+  const chips = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 14).map(([c, n]) =>
+    h("button", { class: S.camera === c ? "on" : "", text: `${c} ·${n}`,
+      title: "Filter by camera (EXIF make and model, else file-name prefix)",
+      onclick: () => { S.camera = S.camera === c ? "" : c; renderBoard(); } }));
+  const box = h("input", { type: "text", placeholder: "name starts with…", value: S.prefix });
+  box.addEventListener("input", () => { S.prefix = box.value.trim().toUpperCase(); renderBoard(); box.focus(); box.setSelectionRange(99, 99); });
+  filtersEl.replaceChildren(h("span", { class: "muted", text: "Camera" }), ...chips, box,
+    S.camera || S.prefix ? h("button", { text: "Show all", onclick: () => { S.camera = S.prefix = ""; renderBoard(); } }) : null);
 }
 function updateCounts() {
   const n = S.assign.size;
@@ -306,13 +341,13 @@ function removeLane(id) {
   renderBoard();
 }
 async function addLane() {
-  const q = input.value.trim();
-  if (!q) return;
+  const q = input.value.trim(), date = dateInput.value;
+  if (!q && !date) return status("Enter a place, a date, or both", true);
   addBtn.disabled = true;
-  status("Looking up…");
+  status(q ? "Looking up…" : "");
   try {
-    const r = await api("/api/resolve", { query: q });
-    S.lanes.push({ id: newId(), label: r.label, lat: r.lat, lng: r.lng });
+    const r = q ? await api("/api/resolve", { query: q }) : { label: "", lat: null, lng: null };
+    S.lanes.push({ id: newId(), label: r.label, lat: r.lat, lng: r.lng, date: date || null });
     input.value = "";
     persist();
     renderBoard();
@@ -321,20 +356,34 @@ async function addLane() {
   addBtn.disabled = false;
 }
 async function save() {
-  const lanes = S.lanes.map((l) => ({ label: l.label, lat: l.lat, lng: l.lng, keys: laneKeys(l.id) }))
+  const lanes = S.lanes.map((l) => ({ label: l.label, lat: l.lat, lng: l.lng, date: l.date, keys: laneKeys(l.id) }))
                        .filter((l) => l.keys.length);
   if (!lanes.length) return;
   const n = lanes.reduce((sum, l) => sum + l.keys.length, 0);
-  if (!confirm(`Save ${plural(n, "tag")} in ${plural(lanes.length, "place")}?\n\n` +
-               lanes.map((l) => `• ${l.label}: ${l.keys.length}`).join("\n"))) return;
+  const desc = (l) => [l.label, l.date && `date ${l.date}`].filter(Boolean).join(", ");
+  if (!confirm(`Save ${plural(n, "tag")} in ${plural(lanes.length, "lane")}?\n\n` +
+               lanes.map((l) => `• ${desc(l)}: ${l.keys.length}`).join("\n"))) return;
+
+  // Re-dating a photo whose date looks real (not a placeholder) needs a second yes.
+  const trusted = lanes.filter((l) => l.date).flatMap((l) => l.keys)
+                       .filter((k) => S.photos.get(k).trusted);
+  let overwrite = false;
+  if (trusted.length) {
+    const days = [...new Set(trusted.map((k) => S.photos.get(k).date))].sort();
+    if (!confirm(`${plural(trusted.length, "photo")} already ${trusted.length === 1 ? "has" : "have"} a date that ` +
+                 `does not look like a placeholder (${days.slice(0, 6).join(", ")}${days.length > 6 ? ", …" : ""}).\n\n` +
+                 `Replace ${trusted.length === 1 ? "it" : "those dates"} anyway?`)) return;
+    overwrite = true;
+  }
   saveBtn.disabled = true;
   status("Saving…");
   try {
-    const r = await api("/api/tags", { lanes });
+    const r = await api("/api/tags", { lanes, confirm_overwrite: overwrite });
     store.del(S.dkey);
     const skipped = r.skipped ? ` (${r.skipped} skipped: already located)` : "";
+    const moved = lanes.some((l) => l.date) ? " Re-dated photos may have left this date range." : "";
     await showLanes(S.start, S.end);
-    status(`Saved ${plural(r.tagged, "photo")}${skipped}.`);
+    status(`Saved ${plural(r.tagged, "photo")}${skipped}.${moved}`);
   } catch (e) { status(e.message, true); saveBtn.disabled = false; }
 }
 
