@@ -78,6 +78,8 @@
   .filters { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
   .filters button.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
   .filters input { width: 130px; }
+  .nearby { display: flex; gap: 6px; align-items: center; }
+  .nearby input[type=range] { width: 110px; padding: 0; }
   .addlane input[type=date] { flex: none; }
   .tile.missing::after { content: "no thumbnail"; position: absolute; inset: 0; display: grid;
                          place-items: center; font-size: 12px; color: var(--muted); }
@@ -238,6 +240,8 @@ function selectTile(key, e) {
 }
 
 let poolEl, lanesEl, ignoreEl, saveBtn, countEl, input, dateInput, addBtn, filtersEl;
+let nearbyOut, nearbySlider;
+let nearbyHours = Number(store.get("tagnearby")) || 2;   // shared by every lane's button
 const prefixOf = (name) => (name.match(/^\D*/) || [""])[0].toUpperCase();
 const visible = (k) => {
   const p = S.photos.get(k);
@@ -255,6 +259,13 @@ function buildBoard() {
                            max: new Date().toISOString().slice(0, 10) });
   addBtn = h("button", { text: "Add lane", onclick: addLane });
   filtersEl = h("div", { class: "filters" });
+  nearbyOut = h("strong", { text: String(nearbyHours) });
+  nearbySlider = h("input", { type: "range", min: "0.5", max: "24", step: "0.5", value: String(nearbyHours) });
+  nearbySlider.addEventListener("input", () => {
+    nearbyHours = Number(nearbySlider.value);
+    nearbyOut.textContent = String(nearbyHours);
+    store.set("tagnearby", nearbyHours);
+  });
 
   const pool = h("div", { class: "lane", id: "pool" },
     h("div", { class: "lane-head" }, h("span", { class: "title", text: "Untagged" }),
@@ -279,6 +290,9 @@ function buildBoard() {
     h("div", { class: "toolbar" },
       h("strong", { text: dates }),
       h("span", { class: "muted", text: `showing ${S.shown.toLocaleString()} of ${S.total.toLocaleString()} untagged.${more}` }),
+      h("label", { class: "nearby", title: "'Add nearby' on a lane moves untagged photos taken within " +
+                                           "this many hours of the lane's photos" },
+        "Nearby ±", nearbyOut, nearbySlider, " h"),
       h("span", { class: "spacer" }), countEl, saveBtn),
     h("div", { id: "pool-wrap" }, filtersEl, pool),
     h("div", { class: "addlane" }, input, dateInput, addBtn),
@@ -320,6 +334,9 @@ function renderBoard() {
         lane.date ? h("span", { class: "badge", text: `date → ${lane.date}` }) : null,
         h("span", { class: "muted", text: plural(laneKeys(lane.id).length, "photo") }),
         h("span", { class: "spacer" }),
+        h("button", { text: "Add nearby",
+          title: "Move untagged photos taken within the Nearby window of this lane's photos",
+          onclick: () => addNearby(lane.id) }),
         h("button", { title: "Remove lane (photos go back to Untagged)", text: "×",
           onclick: () => removeLane(lane.id) })),
       tiles);
@@ -345,6 +362,26 @@ function updateCounts() {
   saveBtn.textContent = `Save ${plural(n, "tag")}` + (ignored ? `, ${ignored} ignored` : "");
   saveBtn.disabled = S.assign.size === 0;
   countEl.textContent = S.sel.size ? `${S.sel.size} selected` : "";
+}
+/* Untagged photos whose capture time is within `hours` of the span of the lane's photos.
+   Placeholder-dated photos have no usable time: they neither define the span nor match. */
+const when = (k) => Date.parse(S.photos.get(k).taken_at);
+const timed = (k) => !S.photos.get(k).generic && Number.isFinite(when(k));
+function nearbyKeys(laneId, hours) {
+  const times = laneKeys(laneId).filter(timed).map(when);
+  if (!times.length) return null;
+  const pad = hours * 3600e3;
+  const lo = Math.min(...times) - pad, hi = Math.max(...times) + pad;
+  return poolKeys().filter((k) => visible(k) && timed(k) && when(k) >= lo && when(k) <= hi);
+}
+function addNearby(laneId) {
+  const keys = nearbyKeys(laneId, nearbyHours);
+  if (keys === null) return status("This lane has no photo with a real timestamp to measure from", true);
+  if (!keys.length) return status(`No untagged photos within ${nearbyHours} h of this lane`);
+  for (const k of keys) S.assign.set(k, laneId);
+  persist();
+  renderBoard();
+  status(`Moved ${plural(keys.length, "photo")} taken within ${nearbyHours} h of this lane.`);
 }
 function persist() {
   store.set(S.dkey, { lanes: S.lanes, assign: [...S.assign] });

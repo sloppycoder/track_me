@@ -78,6 +78,9 @@ get 12:00 local time on that day (in the lane's place when it has one) and are m
 placeholder asks for a second confirmation, and the server refuses it without one. Above
 the Untagged pool, **camera** chips (`Nikon E885 ·144`, named from EXIF make/model, else a
 known file-name prefix, else the prefix itself) and a "name starts with" box filter; "Select all" selects only what is shown.
+Each lane has an **Add nearby** button: it moves the (visible) untagged photos taken within
+±N hours of the lane's photos (slider, default 2 h) into it. Photos with a placeholder date
+have no usable time and are never moved or used to measure; ignored photos stay ignored.
 Nothing is written until **Save**: your lanes are kept as a draft in the browser and
 saved in one transaction (`location_source = 'manual'` and/or `taken_at_source =
 'manual'`, never overwritten by ingest or geocode), with one `tag` entry in

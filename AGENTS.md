@@ -146,7 +146,7 @@ The board's last lane, **Ignore**, writes its photos to `tag_ignore` on the same
 is no un-ignore UI. Placeholder dates
 (`TAG_GENERIC_DATES`, default 2000-12-31/2001-01-01 = the iPhone's "no date") re-date freely;
 re-dating any other date needs `confirm_overwrite` (the API answers 409 otherwise,
-`Database.trusted_dates`). The pool has client-side camera chips (`tagger.camera_label`: EXIF make/model, else prefix) plus a file-name-prefix box.
+`Database.trusted_dates`). The pool has client-side camera chips (`tagger.camera_label`: EXIF make/model, else prefix) plus a file-name-prefix box. Each lane's "Add nearby" (client-side) pulls visible pool photos within ±N h (slider) of the lane's real timestamps; placeholder-dated and ignored photos are never moved.
 Lane places resolve via the Google Geocoding API (plus codes and names) or offline for
 `lat, lng`. Thumbnails are read from `THUMBNAIL_CACHE_DIR` by 40-hex `dedupe_key` only. No
 auth: loopback by default, Cloudflare Access in front when exposed.
