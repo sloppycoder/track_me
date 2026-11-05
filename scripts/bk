@@ -1,2 +1,0 @@
-gcloud storage cp userdata/.gitkeep  gs://vinolab/pst-miner/.gitkeep
-gcloud storage rsync --recursive userdata/track_me.db gs://vinolab/track_me/track_me.db
